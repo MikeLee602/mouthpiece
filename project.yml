@@ -1,0 +1,78 @@
+name: Mouthpiece
+options:
+  bundleIdPrefix: com.mouthpiece
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: zh-Hans
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    PRODUCT_BUNDLE_IDENTIFIER: com.mouthpiece.app
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_HARDENED_RUNTIME: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  Mouthpiece:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Mouthpiece
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - Mouthpiece/Resources
+    info:
+      path: Mouthpiece/Info.plist
+      properties:
+        CFBundleName: Mouthpiece
+        CFBundleDisplayName: Mouthpiece
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSMicrophoneUsageDescription: "Mouthpiece 需要麦克风权限将你的语音转为文字。"
+        LSUIElement: true
+        NSHumanReadableCopyright: "Copyright © 2026 Mouthpiece contributors. MIT License."
+    entitlements:
+      path: Mouthpiece/Mouthpiece.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.device.audio-input: true
+        com.apple.security.network.client: true
+    settings:
+      base:
+        PRODUCT_NAME: Mouthpiece
+  MouthpieceTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - MouthpieceTests
+    dependencies:
+      - target: Mouthpiece
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Mouthpiece.app/Contents/MacOS/Mouthpiece"
+schemes:
+  Mouthpiece:
+    build:
+      targets:
+        Mouthpiece: all
+        MouthpieceTests: [test]
+    test:
+      targets:
+        - MouthpieceTests
+    run:
+      config: Debug
+    archive:
+      config: Release

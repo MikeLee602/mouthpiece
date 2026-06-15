@@ -1,0 +1,15 @@
+.DS_Store
+build/
+DerivedData/
+*.xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+Pods/
+*.swp
+.build/
+.idea/
+secrets/
+Mouthpiece.xcodeproj
+project-cache/
