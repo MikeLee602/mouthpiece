@@ -26,6 +26,12 @@ struct MouthpieceApp: App {
                         let coord = makeCoordinator()
                         coord.start()
                         coordinator = coord
+                        // Proactively request microphone permission on first launch
+                        // so the system dialog appears before user tries Fn
+                        if coord.permission.microphone == .notDetermined {
+                            print("[App] Requesting microphone permission proactively...")
+                            _ = await coord.permission.requestMicrophone()
+                        }
                         await coord.loadModelIfNeeded()
                     }
                 }

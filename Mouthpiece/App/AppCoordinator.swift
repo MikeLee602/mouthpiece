@@ -19,7 +19,7 @@ final class AppCoordinator {
     private(set) var phase: Phase = .idle
 
     // Dependencies
-    private let permission: PermissionService
+    let permission: PermissionService
     private let hotkey: HotKeyManager
     private let recorder: any AudioRecording
     private let transcriber: any Transcribing
@@ -59,6 +59,7 @@ final class AppCoordinator {
     }
 
     func start() {
+        print("[Coordinator] start() called")
         hotkey.start()
     }
 
@@ -67,6 +68,7 @@ final class AppCoordinator {
     }
 
     func handleHotkey(_ event: HotKeyEvent) {
+        print("[Coordinator] handleHotkey: \(event), current phase: \(phase)")
         switch event {
         case .pressed:
             Task { await startRecording() }
@@ -91,11 +93,17 @@ final class AppCoordinator {
 
     private func startRecording() async {
         guard phase == .idle else { return }
+        print("[Coordinator] startRecording: mic=\(permission.microphone), accessibility=\(permission.accessibility)")
 
         // Permission gate
         guard permission.microphone == .granted else {
+            print("[Coordinator] Mic not granted, requesting now...")
+            // Try to actively request — this triggers the system dialog
+            Task {
+                _ = await permission.requestMicrophone()
+            }
             phase = .error("没有麦克风权限")
-            floatingBar.setError("没有麦克风权限")
+            floatingBar.setError("正在请求麦克风权限")
             floatingWindow.showIfNeeded()
             return
         }

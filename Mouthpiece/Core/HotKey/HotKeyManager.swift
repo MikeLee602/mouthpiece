@@ -19,17 +19,21 @@ final class HotKeyManager {
 
     func start() {
         guard globalMonitor == nil else { return }
+        print("[HotKey] start() called, triggerKey=\(triggerKey.rawValue), modifierFlag=\(String(describing: triggerKey.modifierFlag))")
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            print("[HotKey] GLOBAL flagsChanged: \(event.modifierFlags.rawValue)")
             Task { @MainActor in
                 self?.handleFlagsChanged(flags: event.modifierFlags)
             }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            print("[HotKey] LOCAL flagsChanged: \(event.modifierFlags.rawValue)")
             Task { @MainActor in
                 self?.handleFlagsChanged(flags: event.modifierFlags)
             }
             return event
         }
+        print("[HotKey] monitors installed: global=\(globalMonitor != nil) local=\(localMonitor != nil)")
     }
 
     func stop() {
@@ -54,9 +58,11 @@ final class HotKeyManager {
 
         if nowDown && !isPressed {
             isPressed = true
+            print("[HotKey] PRESSED")
             onEvent(.pressed)
         } else if !nowDown && isPressed {
             isPressed = false
+            print("[HotKey] RELEASED")
             onEvent(.released)
         }
     }
