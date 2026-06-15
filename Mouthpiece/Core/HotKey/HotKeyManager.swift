@@ -3,14 +3,18 @@ import AppKit
 @MainActor
 final class HotKeyManager {
     private let triggerKey: TriggerKey
-    private let onEvent: @MainActor (HotKeyEvent) -> Void
+    private var onEvent: @MainActor (HotKeyEvent) -> Void
     private var isPressed = false
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
-    init(triggerKey: TriggerKey, onEvent: @escaping @MainActor (HotKeyEvent) -> Void) {
+    init(triggerKey: TriggerKey, onEvent: @escaping @MainActor (HotKeyEvent) -> Void = { _ in }) {
         self.triggerKey = triggerKey
         self.onEvent = onEvent
+    }
+
+    func replaceHandler(_ handler: @escaping @MainActor (HotKeyEvent) -> Void) {
+        self.onEvent = handler
     }
 
     func start() {
