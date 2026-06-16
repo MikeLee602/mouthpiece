@@ -6,11 +6,18 @@ private let appLog = Logger(subsystem: "com.mouthpiece.app", category: "App")
 
 /// AppDelegate guarantees we initialize the coordinator at app launch,
 /// not lazily on first MenuBarExtra popup.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    @MainActor static let shared = AppDelegate()
-    @MainActor private(set) var coordinator: AppCoordinator?
+    static var shared: AppDelegate?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    var coordinator: AppCoordinator?
+
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
+
+    nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
         appLog.notice("🚀 applicationDidFinishLaunching")
         Task { @MainActor in
             await self.bootstrap()
@@ -60,17 +67,18 @@ struct MouthpieceApp: App {
 
     var body: some Scene {
         MenuBarExtra("Mouthpiece", image: "MenuBarIcon") {
-            MenuView()
+            MenuView(delegate: appDelegate)
         }
         .menuBarExtraStyle(.menu)
     }
 }
 
 private struct MenuView: View {
+    let delegate: AppDelegate
     @State private var refreshTrigger: Int = 0
 
     var body: some View {
-        let coord = AppDelegate.shared.coordinator
+        let coord = delegate.coordinator
         VStack(alignment: .leading, spacing: 4) {
             if let coord {
                 Text(statusLabel(for: coord.phase))
