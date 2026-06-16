@@ -68,6 +68,16 @@ final class HotKeyManager {
         }
     }
 
+    /// Watchdog: if a flagsChanged hasn't arrived in 8 seconds while pressed, force-release.
+    /// This guards against the case where the modifier flag stays "stuck" (e.g. macOS intercepts it).
+    func forceReleaseIfPressed() {
+        if isPressed {
+            log.notice("🎹 FORCE RELEASED (watchdog)")
+            isPressed = false
+            onEvent(.released)
+        }
+    }
+
     isolated deinit {
         // NSEvent.removeMonitor is fine to call from any thread; safe in deinit
         if let m = globalMonitor { NSEvent.removeMonitor(m) }

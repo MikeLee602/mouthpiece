@@ -146,20 +146,30 @@ final class AppCoordinator {
     }
 
     private func finishRecording() async {
-        guard phase == .recording else { return }
+        log.notice("🏁 finishRecording called, phase: \(String(describing: self.phase))")
+        guard phase == .recording else {
+            log.notice("🏁 phase != recording, skipping")
+            return
+        }
         stopElapsedTimer()
 
+        log.notice("🏁 Calling recorder.stop()...")
         let samples = await recorder.stop()
+        log.notice("🏁 Got \(samples.count) samples")
         phase = .transcribing
         floatingBar.setProcessing()
 
         do {
+            log.notice("🏁 Calling transcriber.transcribe()...")
             let result = try await transcriber.transcribe(samples: samples, language: nil)
+            log.notice("🏁 Transcribed: \(result.text)")
 
             phase = .cleaning
             let cleaned = cleaner.clean(result.text, options: cleanOptions)
+            log.notice("🏁 Cleaned: \(cleaned)")
 
             phase = .injecting
+            log.notice("🏁 Calling injector.inject()...")
             try await injector.inject(cleaned)
 
             // TODO P0-10: persist to history

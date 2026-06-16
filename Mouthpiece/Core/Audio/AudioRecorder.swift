@@ -1,6 +1,35 @@
 import AVFoundation
 import Observation
 
+/// Holds audio buffer state separate from the @MainActor class so the AVAudio render thread
+/// can mutate it without ever touching MainActor-isolated state.
+final class AudioBufferStore: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.mouthpiece.audio-buffer")
+    private var pendingChunks: [[Float]] = []
+    private var _converter: AVAudioConverter?
+
+    var converter: AVAudioConverter? {
+        get { queue.sync { _converter } }
+        set { queue.sync { _converter = newValue } }
+    }
+
+    func append(_ chunk: [Float]) {
+        queue.sync { pendingChunks.append(chunk) }
+    }
+
+    func drain() -> [[Float]] {
+        queue.sync {
+            let c = pendingChunks
+            pendingChunks.removeAll()
+            return c
+        }
+    }
+
+    func clear() {
+        queue.sync { pendingChunks.removeAll() }
+    }
+}
+
 @MainActor
 @Observable
 final class AudioRecorder: AudioRecording {
@@ -8,16 +37,13 @@ final class AudioRecorder: AudioRecording {
     private(set) var state: AudioRecorderState = .idle
 
     private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
+    private let store = AudioBufferStore()
     private var sampleBuffer: [Float] = []
     private var startTime: Date?
     private var timer: Timer?
 
-    nonisolated(unsafe) private var bufferQueue = DispatchQueue(label: "com.mouthpiece.audio-buffer")
-    nonisolated(unsafe) private var pendingChunks: [[Float]] = []
-
     static let targetSampleRate: Double = 16000
-    static let maxDuration: TimeInterval = 600  // 10 分钟
+    static let maxDuration: TimeInterval = 600  // 10 minutes
 
     init() {}
 
@@ -35,13 +61,17 @@ final class AudioRecorder: AudioRecording {
         ) else {
             throw AudioRecorderError.engineFailedToStart
         }
-        converter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        store.converter = AVAudioConverter(from: inputFormat, to: targetFormat)
 
         sampleBuffer.removeAll(keepingCapacity: true)
-        bufferQueue.sync { pendingChunks.removeAll() }
+        store.clear()
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.appendBufferNonisolated(buffer, targetFormat: targetFormat)
+        // Capture store and target format by value; both are Sendable.
+        let store = self.store
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
+            // We are on a real-time audio thread. DO NOT touch any MainActor state.
+            // We only use `store` (Sendable) and pure operations.
+            Self.processBuffer(buffer, targetFormat: targetFormat, store: store)
         }
 
         do {
@@ -89,19 +119,20 @@ final class AudioRecorder: AudioRecording {
     }
 
     private func drainPending() {
-        let chunks: [[Float]] = bufferQueue.sync {
-            let c = pendingChunks
-            pendingChunks.removeAll()
-            return c
-        }
+        let chunks = store.drain()
         for chunk in chunks {
             sampleBuffer.append(contentsOf: chunk)
         }
     }
 
-    /// Runs on AVAudioEngine render thread. Convert + enqueue to main actor.
-    nonisolated private func appendBufferNonisolated(_ buffer: AVAudioPCMBuffer, targetFormat: AVAudioFormat) {
-        guard let converter = converterUnsafe else { return }
+    /// Pure, nonisolated helper. Runs on the AVAudio render thread.
+    /// Does NOT touch any MainActor state — only the Sendable `store`.
+    nonisolated private static func processBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        targetFormat: AVAudioFormat,
+        store: AudioBufferStore
+    ) {
+        guard let converter = store.converter else { return }
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         let outCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 16)
         guard let outBuf = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outCapacity) else { return }
@@ -117,12 +148,6 @@ final class AudioRecorder: AudioRecording {
         guard err == nil, let data = outBuf.floatChannelData?[0] else { return }
         let frames = Int(outBuf.frameLength)
         let chunk = Array(UnsafeBufferPointer(start: data, count: frames))
-        bufferQueue.sync { pendingChunks.append(chunk) }
-    }
-
-    nonisolated private var converterUnsafe: AVAudioConverter? {
-        // Read converter from MainActor field. In practice it's set once in start() before
-        // the tap is installed, and only read during the tap callback, so racy reads are benign.
-        MainActor.assumeIsolated { converter }
+        store.append(chunk)
     }
 }
