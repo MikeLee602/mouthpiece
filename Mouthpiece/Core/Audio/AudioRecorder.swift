@@ -4,55 +4,14 @@ import os.log
 
 private let log = Logger(subsystem: "com.mouthpiece.app", category: "Audio")
 
-/// Holds audio buffer state separate from the @MainActor class so the AVAudio render thread
-/// can mutate it without ever touching MainActor-isolated state.
-final class AudioBufferStore: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.mouthpiece.audio-buffer")
-    private var pendingChunks: [[Float]] = []
-    private var _converter: AVAudioConverter?
-    private var _tapCallCount: Int = 0
-
-    var converter: AVAudioConverter? {
-        get { queue.sync { _converter } }
-        set { queue.sync { _converter = newValue } }
-    }
-
-    var tapCallCount: Int {
-        queue.sync { _tapCallCount }
-    }
-
-    func append(_ chunk: [Float]) {
-        queue.sync {
-            pendingChunks.append(chunk)
-            _tapCallCount += 1
-        }
-    }
-
-    func drain() -> [[Float]] {
-        queue.sync {
-            let c = pendingChunks
-            pendingChunks.removeAll()
-            return c
-        }
-    }
-
-    func clear() {
-        queue.sync {
-            pendingChunks.removeAll()
-            _tapCallCount = 0
-        }
-    }
-}
-
 @MainActor
 @Observable
 final class AudioRecorder: AudioRecording {
 
     private(set) var state: AudioRecorderState = .idle
 
-    private var engine: AVAudioEngine?
-    private var store = AudioBufferStore()
-    private var sampleBuffer: [Float] = []
+    private var recorder: AVAudioRecorder?
+    private var currentURL: URL?
     private var startTime: Date?
     private var timer: Timer?
 
@@ -64,72 +23,65 @@ final class AudioRecorder: AudioRecording {
     func start() throws {
         guard case .idle = state else { return }
 
-        // Build a fresh engine AND a fresh buffer store on each recording.
-        // AVAudioEngine doesn't reliably restart its tap after stop/start cycles
-        // in macOS 26, and reusing the store can leak in-flight chunks from the
-        // previous session.
-        let engine = AVAudioEngine()
-        self.engine = engine
-        self.store = AudioBufferStore()
-        let store = self.store
-        let input = engine.inputNode
-        let inputFormat = input.inputFormat(forBus: 0)
-        log.notice("🎤 inputFormat: sr=\(inputFormat.sampleRate), ch=\(inputFormat.channelCount), interleaved=\(inputFormat.isInterleaved)")
+        // Each recording goes to a fresh temp WAV file. AVAudioRecorder writes
+        // directly to disk, sidestepping the AVAudioEngine tap issues we hit
+        // on macOS 26 (taps stopped firing after the first stop+start cycle).
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mouthpiece-rec-\(UUID().uuidString).wav")
 
-        guard let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: Self.targetSampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw AudioRecorderError.engineFailedToStart
-        }
-        store.converter = AVAudioConverter(from: inputFormat, to: targetFormat)
-
-        sampleBuffer.removeAll(keepingCapacity: true)
-        store.clear()
-
-        Self.installTap(on: input, format: inputFormat, targetFormat: targetFormat, store: store)
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: Self.targetSampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
 
         do {
-            try engine.start()
+            let rec = try AVAudioRecorder(url: url, settings: settings)
+            rec.isMeteringEnabled = true
+            guard rec.prepareToRecord() else {
+                throw AudioRecorderError.engineFailedToStart
+            }
+            guard rec.record() else {
+                throw AudioRecorderError.engineFailedToStart
+            }
+            self.recorder = rec
+            self.currentURL = url
         } catch {
-            input.removeTap(onBus: 0)
+            log.error("🎤 AVAudioRecorder failed: \(String(describing: error), privacy: .public)")
             throw AudioRecorderError.engineFailedToStart
         }
 
         startTime = Date()
         state = .recording(elapsed: 0)
         startTimer()
-        log.notice("🎤 engine started, tap installed")
-    }
-
-    /// Nonisolated tap installer. Because this is `nonisolated static`, the closure
-    /// it constructs does NOT inherit MainActor isolation — Swift treats it as a
-    /// plain `@Sendable` callback, which is what AVAudioEngine expects.
-    nonisolated private static func installTap(
-        on input: AVAudioInputNode,
-        format: AVAudioFormat,
-        targetFormat: AVAudioFormat,
-        store: AudioBufferStore
-    ) {
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-            processBuffer(buffer, targetFormat: targetFormat, store: store)
-        }
+        log.notice("🎤 AVAudioRecorder started, file=\(url.path, privacy: .public)")
     }
 
     func stop() async -> [Float] {
         timer?.invalidate()
         timer = nil
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine = nil
 
-        // Drain pending chunks
-        drainPending()
-        let samples = sampleBuffer
-        let tapCount = store.tapCallCount
-        log.notice("🎤 stop: total samples=\(samples.count), tap callbacks fired=\(tapCount)")
+        guard let recorder, let url = currentURL else {
+            log.error("🎤 stop called but no recorder")
+            state = .finished(sampleCount: 0, sampleRate: Self.targetSampleRate)
+            return []
+        }
+
+        recorder.stop()
+        self.recorder = nil
+
+        // Read the WAV file back as Float samples.
+        let samples = Self.readWavAsFloat(url: url)
+        log.notice("🎤 stop: read \(samples.count) samples from file, peakAbs=\(samples.map { abs($0) }.max() ?? 0)")
+        // Clean up the temp recording file (we don't need it; transcriber writes
+        // its own WAV from the samples).
+        try? FileManager.default.removeItem(at: url)
+        currentURL = nil
+
         state = .finished(sampleCount: samples.count, sampleRate: Self.targetSampleRate)
         return samples
     }
@@ -143,7 +95,6 @@ final class AudioRecorder: AudioRecording {
     private func tick() {
         guard let start = startTime else { return }
         let elapsed = Date().timeIntervalSince(start)
-        drainPending()
         state = .recording(elapsed: elapsed)
         if elapsed >= Self.maxDuration {
             Task { @MainActor in
@@ -153,36 +104,23 @@ final class AudioRecorder: AudioRecording {
         }
     }
 
-    private func drainPending() {
-        let chunks = store.drain()
-        for chunk in chunks {
-            sampleBuffer.append(contentsOf: chunk)
+    /// Read a 16-bit mono PCM WAV file and return samples as Float in [-1, 1].
+    /// Skips the 44-byte RIFF/WAVE header.
+    static func readWavAsFloat(url: URL) -> [Float] {
+        guard let data = try? Data(contentsOf: url), data.count > 44 else {
+            return []
         }
-    }
-
-    /// Pure, nonisolated helper. Runs on the AVAudio render thread.
-    /// Does NOT touch any MainActor state — only the Sendable `store`.
-    nonisolated private static func processBuffer(
-        _ buffer: AVAudioPCMBuffer,
-        targetFormat: AVAudioFormat,
-        store: AudioBufferStore
-    ) {
-        guard let converter = store.converter else { return }
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let outCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 16)
-        guard let outBuf = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outCapacity) else { return }
-
-        var err: NSError?
-        var consumed = false
-        converter.convert(to: outBuf, error: &err) { _, status in
-            if consumed { status.pointee = .noDataNow; return nil }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
+        // Skip 44-byte standard WAV header. AVAudioRecorder writes a standard
+        // 16-bit PCM header at this size.
+        let pcm = data.subdata(in: 44..<data.count)
+        let count = pcm.count / 2
+        var floats = [Float](repeating: 0, count: count)
+        pcm.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let i16 = raw.bindMemory(to: Int16.self)
+            for i in 0..<count {
+                floats[i] = Float(i16[i]) / 32768.0
+            }
         }
-        guard err == nil, let data = outBuf.floatChannelData?[0] else { return }
-        let frames = Int(outBuf.frameLength)
-        let chunk = Array(UnsafeBufferPointer(start: data, count: frames))
-        store.append(chunk)
+        return floats
     }
 }
