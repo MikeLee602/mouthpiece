@@ -21,7 +21,15 @@ final class AudioRecorder: AudioRecording {
     init() {}
 
     func start() throws {
-        guard case .idle = state else { return }
+        // Allow start from idle, finished, or failed — only block while actively recording.
+        if case .recording = state {
+            log.notice("🎤 start() called but already recording, skipping")
+            return
+        }
+        // Reset any previous recorder
+        recorder?.stop()
+        recorder = nil
+        currentURL = nil
 
         // Each recording goes to a fresh temp WAV file. AVAudioRecorder writes
         // directly to disk, sidestepping the AVAudioEngine tap issues we hit
