@@ -64,5 +64,13 @@ sleep 2
 
 PID=$(pgrep -x Mouthpiece || echo "?")
 echo "  ↳ PID: $PID"
+
+echo ""
+echo "▶ 自检 TCC（dev rebuild 后通常会失效）..."
+sleep 1
+TRUSTED=$(/usr/bin/log show --predicate 'subsystem == "com.mouthpiece.app" && category == "Injector"' --last 30s --info --debug 2>/dev/null | grep "AXIsProcessTrusted" | tail -1 || true)
+if [[ -z "$TRUSTED" ]]; then
+  echo "  ↳ 还没 inject 过，AXIsProcessTrusted 状态未知（按一次 Fn 验证）"
+fi
 echo ""
 echo "✓ Ready. Watch logs: log stream --predicate 'subsystem == \"$BUNDLE_ID\"' --info --debug"

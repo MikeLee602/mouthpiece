@@ -96,6 +96,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settings.notificationsEnabled {
             NotificationCenterHelper.requestAuthorizationIfNeeded()
         }
+
+        // 缺辅助功能权限就立刻提示——不然用户按 Fn 之后才发现，体验很烂。
+        if coord.permission.accessibility != .granted {
+            await MainActor.run {
+                let alert = NSAlert()
+                alert.messageText = "嘴替需要「辅助功能」权限"
+                alert.informativeText = "粘贴文字到当前应用需要这个权限。点「打开设置」后，找到 Mouthpiece 把开关打开。"
+                alert.addButton(withTitle: "打开设置")
+                alert.addButton(withTitle: "稍后")
+                alert.alertStyle = .informational
+                if alert.runModal() == .alertFirstButtonReturn {
+                    coord.permission.openAccessibilitySettings()
+                }
+            }
+        }
     }
 
     @MainActor

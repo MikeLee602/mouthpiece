@@ -17,6 +17,7 @@ struct MenuBarPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            permissionBanner
             issuesBanner
             statusCard
             Divider()
@@ -28,13 +29,76 @@ struct MenuBarPopover: View {
         }
         .padding(14)
         .frame(width: 320)
-        .onAppear { reload() }
+        .onAppear {
+            coordinator.permission.refresh()
+            reload()
+        }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // 状态卡跟着 phase 变；同时偶尔刷新历史。
+            // 状态卡跟着 phase 变；同时偶尔刷新历史 + 权限。
             refreshTick &+= 1
+            if refreshTick % 2 == 0 {
+                coordinator.permission.refresh()
+            }
             if refreshTick % 4 == 0 {
                 reload()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var permissionBanner: some View {
+        let mic = coordinator.permission.microphone
+        let acc = coordinator.permission.accessibility
+        let micOK = mic == .granted
+        let accOK = acc == .granted
+        if !micOK || !accOK {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.shield.fill").foregroundStyle(.red)
+                    Text("权限未就绪").font(.caption.weight(.semibold))
+                }
+                if !micOK {
+                    permissionRow(
+                        title: "麦克风",
+                        statusText: micText(mic),
+                        action: "打开设置",
+                        run: { coordinator.permission.openMicrophoneSettings() }
+                    )
+                }
+                if !accOK {
+                    permissionRow(
+                        title: "辅助功能（粘贴需要）",
+                        statusText: "未授权 — Cmd+V 无法触发",
+                        action: "打开设置",
+                        run: { coordinator.permission.openAccessibilitySettings() }
+                    )
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func permissionRow(title: String, statusText: String, action: String, run: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.caption2.weight(.medium))
+                Text(statusText).font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action, action: run)
+                .buttonStyle(.borderless)
+                .font(.caption2)
+                .foregroundStyle(.tint)
+        }
+    }
+
+    private func micText(_ status: MicrophonePermission) -> String {
+        switch status {
+        case .granted: return "已授权"
+        case .denied: return "已被拒绝"
+        case .notDetermined: return "等待首次授权"
         }
     }
 
