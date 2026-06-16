@@ -49,13 +49,16 @@ final class AppCoordinatorTests: XCTestCase {
         let inj = MockInjector()
         let bar = FloatingBarState()
         let win = FloatingBarWindow(state: bar)
+        let history = try! HistoryStore(inMemory: true)
+        let dict = DictionaryStore(sharing: history)
         let coord = AppCoordinator(
             permission: perm,
             recorder: rec,
             transcriber: trn,
             cleaner: TextCleaner(),
             injector: inj,
-            history: try! HistoryStore(inMemory: true),
+            history: history,
+            dictionary: dict,
             floatingBar: bar,
             floatingWindow: win
         )
@@ -79,7 +82,7 @@ final class AppCoordinatorTests: XCTestCase {
         let (coord, _, _, _) = await makeCoordinator(transcriberReady: false)
         // Simulate Fn press
         coord.handleHotkey(.pressed)
-        try? await Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(400))
         // Phase should be error if mic granted, or also error if mic not granted
         if case .error = coord.phase {
             // ok

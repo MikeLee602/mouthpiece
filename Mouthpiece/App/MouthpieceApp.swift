@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     var coordinator: AppCoordinator?
 
+    private var mainWindowController: NSWindowController?
+    private var settingsWindowController: NSWindowController?
+
     override init() {
         super.init()
         AppDelegate.shared = self
@@ -29,11 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard coordinator == nil else { return }
         appLog.notice("🚀 Building coordinator...")
 
+        let settings = AppSettings.shared
         let permission = PermissionService()
         let recorder = AudioRecorder()
         let transcriber = WhisperCLITranscriber(
-            binaryPath: "/opt/homebrew/bin/whisper-cli",
-            modelPath: "/opt/homebrew/share/whisper.cpp/ggml-medium.bin"
+            binaryPath: settings.whisperBinaryPath,
+            modelPath: settings.whisperModelPath
         )
         let injector = TextInjector()
         let bar = FloatingBarState()
@@ -45,17 +49,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             appLog.error("🚀 Failed to init HistoryStore: \(String(describing: error))")
             return  // App can't function without history; bail out cleanly
         }
+        let dictionary = DictionaryStore(sharing: history)
         let coord = AppCoordinator(
             permission: permission,
             recorder: recorder,
             transcriber: transcriber,
             injector: injector,
             history: history,
+            dictionary: dictionary,
             floatingBar: bar,
-            floatingWindow: window
+            floatingWindow: window,
+            triggerKey: settings.triggerKey
         )
         coord.start()
         self.coordinator = coord
+
+        // Hot-swap trigger key when user changes it in Settings.
+        settings.onTriggerKeyChange = { [weak coord] key in
+            coord?.setTriggerKey(key)
+        }
 
         appLog.notice("🚀 Mic permission: \(String(describing: coord.permission.microphone))")
         if coord.permission.microphone == .notDetermined {
@@ -65,6 +77,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appLog.notice("🚀 Loading model...")
         await coord.loadModelIfNeeded()
         appLog.notice("🚀 Bootstrap complete. Phase: \(String(describing: coord.phase))")
+
+        // Background: housekeeping + diagnostics
+        let issues = StartupCheck.run(
+            whisperBinary: settings.whisperBinaryPath,
+            whisperModel: settings.whisperModelPath
+        )
+        for issue in issues {
+            appLog.notice("🩺 \(issue.title, privacy: .public): \(issue.detail, privacy: .public)")
+        }
+        coord.startupIssues = issues
+
+        // 历史保留 30 天 / 上限 1000 条 — 启动时清一次
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        history.purgeOlderThan(cutoff)
+
+        // 通知权限（不阻塞）
+        if settings.notificationsEnabled {
+            NotificationCenterHelper.requestAuthorizationIfNeeded()
+        }
+    }
+
+    @MainActor
+    func openMainWindow() {
+        guard let coord = coordinator else { return }
+        if let wc = mainWindowController {
+            wc.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(rootView: MainWindowView(coordinator: coord))
+        let window = NSWindow(contentViewController: host)
+        window.title = "嘴替"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setContentSize(NSSize(width: 760, height: 500))
+        window.center()
+        let wc = NSWindowController(window: window)
+        wc.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.mainWindowController = wc
+    }
+
+    @MainActor
+    func openSettingsWindow() {
+        if let wc = settingsWindowController {
+            wc.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(rootView: SettingsPlaceholderView())
+        let window = NSWindow(contentViewController: host)
+        window.title = "Mouthpiece 设置"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 560, height: 420))
+        window.center()
+        let wc = NSWindowController(window: window)
+        wc.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.settingsWindowController = wc
     }
 }
 
@@ -75,49 +145,35 @@ struct MouthpieceApp: App {
 
     var body: some Scene {
         MenuBarExtra("Mouthpiece", image: "MenuBarIcon") {
-            MenuView(delegate: appDelegate)
+            PopoverHost(delegate: appDelegate)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
-private struct MenuView: View {
+/// Wraps MenuBarPopover and reacts to coordinator becoming ready.
+private struct PopoverHost: View {
     let delegate: AppDelegate
     @State private var refreshTrigger: Int = 0
 
     var body: some View {
-        let coord = delegate.coordinator
-        VStack(alignment: .leading, spacing: 4) {
-            if let coord {
-                Text(statusLabel(for: coord.phase))
-                Divider()
-                Text("按住 Fn 开始录音").font(.caption).foregroundStyle(.secondary)
-                Divider()
-                Button("重新加载模型") {
-                    Task { @MainActor in
-                        await coord.loadModelIfNeeded()
-                    }
-                }
+        Group {
+            if let coord = delegate.coordinator {
+                MenuBarPopover(
+                    coordinator: coord,
+                    openMain: { delegate.openMainWindow() },
+                    openSettings: { delegate.openSettingsWindow() }
+                )
             } else {
-                Text("初始化中…")
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("初始化中…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .frame(width: 240)
             }
-            Divider()
-            Button("退出") { NSApp.terminate(nil) }
         }
-        .padding(8)
         .id(refreshTrigger)
         .onAppear { refreshTrigger += 1 }
-    }
-
-    private func statusLabel(for phase: AppCoordinator.Phase) -> String {
-        switch phase {
-        case .idle: return "● 待机"
-        case .recording: return "🔴 录音中"
-        case .transcribing: return "✦ 识别中"
-        case .cleaning: return "🪄 整理中"
-        case .injecting: return "⌨️ 粘贴中"
-        case .done(let n): return "✓ 已完成 \(n) 字"
-        case .error(let m): return "⚠ \(m)"
-        }
     }
 }

@@ -5,7 +5,7 @@ private let log = Logger(subsystem: "com.mouthpiece.app", category: "HotKey")
 
 @MainActor
 final class HotKeyManager {
-    private let triggerKey: TriggerKey
+    private(set) var triggerKey: TriggerKey
     private var onEvent: @MainActor (HotKeyEvent) -> Void
     private var isPressed = false
     private var globalMonitor: Any?
@@ -18,6 +18,21 @@ final class HotKeyManager {
 
     func replaceHandler(_ handler: @escaping @MainActor (HotKeyEvent) -> Void) {
         self.onEvent = handler
+    }
+
+    /// Switch the trigger key at runtime. Restarts monitors if currently running.
+    func setTriggerKey(_ key: TriggerKey) {
+        guard key != triggerKey else { return }
+        let wasRunning = globalMonitor != nil
+        if wasRunning { stop() }
+        // Reset pressed state — old key may have been "down" when swapped.
+        if isPressed {
+            isPressed = false
+            onEvent(.released)
+        }
+        self.triggerKey = key
+        log.notice("🎹 triggerKey switched to \(key.rawValue, privacy: .public)")
+        if wasRunning { start() }
     }
 
     func start() {

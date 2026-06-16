@@ -21,6 +21,9 @@ final class AppCoordinator {
 
     private(set) var phase: Phase = .idle
 
+    /// 启动自检发现的问题 — UI 可以在 popover / 主窗顶部展示。
+    var startupIssues: [StartupCheck.Issue] = []
+
     // Dependencies
     let permission: PermissionService
     private let hotkey: HotKeyManager
@@ -29,7 +32,8 @@ final class AppCoordinator {
     private let cleaner: TextCleaner
     private let simplifier = SimplifiedChineseConverter()
     private let injector: any TextInjecting
-    private let history: HistoryStore
+    let history: HistoryStore
+    let dictionary: DictionaryStore
     let floatingBar: FloatingBarState
     private let floatingWindow: FloatingBarWindow
 
@@ -45,6 +49,7 @@ final class AppCoordinator {
         cleaner: TextCleaner = TextCleaner(),
         injector: any TextInjecting,
         history: HistoryStore,
+        dictionary: DictionaryStore,
         floatingBar: FloatingBarState,
         floatingWindow: FloatingBarWindow,
         triggerKey: TriggerKey = .fn
@@ -55,6 +60,7 @@ final class AppCoordinator {
         self.cleaner = cleaner
         self.injector = injector
         self.history = history
+        self.dictionary = dictionary
         self.floatingBar = floatingBar
         self.floatingWindow = floatingWindow
         self.hotkey = HotKeyManager(triggerKey: triggerKey)
@@ -69,6 +75,14 @@ final class AppCoordinator {
         log.notice("🟢 start() called")
         hotkey.start()
     }
+
+    /// 切换触发键（设置页用）。
+    func setTriggerKey(_ key: TriggerKey) {
+        hotkey.setTriggerKey(key)
+    }
+
+    /// 当前触发键。
+    var currentTriggerKey: TriggerKey { hotkey.triggerKey }
 
     func stop() {
         hotkey.stop()
@@ -169,21 +183,32 @@ final class AppCoordinator {
             log.notice("🏁 Transcribed: \(result.text)")
 
             phase = .cleaning
-            let cleaned = cleaner.clean(result.text, options: cleanOptions)
+            let settings = AppSettings.shared
+            var opts = cleanOptions
+            opts.removeFillers = settings.cleanFillerWords
+            opts.removeRepetition = settings.dedupRepeats
+            let cleaned = cleaner.clean(result.text, options: opts)
             log.notice("🏁 Cleaned: \(cleaned)")
 
-            let simplified = simplifier.convert(cleaned)
+            let simplified = settings.convertTraditionalToSimplified
+                ? simplifier.convert(cleaned)
+                : cleaned
             log.notice("🏁 Simplified: \(simplified, privacy: .public)")
+
+            let dictApplied = dictionary.snapshot().apply(to: simplified)
+            if dictApplied != simplified {
+                log.notice("🏁 Dictionary applied: \(dictApplied, privacy: .public)")
+            }
 
             phase = .injecting
             log.notice("🏁 Calling injector.inject()...")
-            try await injector.inject(simplified)
+            try await injector.inject(dictApplied)
 
             // Persist history (best-effort)
             let entry = TranscriptionEntryDraft(
                 timestamp: Date(),
                 rawText: result.text,
-                cleanedText: simplified,
+                cleanedText: dictApplied,
                 language: result.language,
                 durationSeconds: result.durationSeconds,
                 appName: NSWorkspace.shared.frontmostApplication?.localizedName
@@ -191,8 +216,12 @@ final class AppCoordinator {
             history.save(entry)
             log.notice("📝 Saved to history (\(entry.cleanedText.count) chars)")
 
-            phase = .done(chars: simplified.count)
-            floatingBar.setDone(chars: simplified.count)
+            if AppSettings.shared.notificationsEnabled {
+                NotificationCenterHelper.showTranscriptionDone(text: dictApplied)
+            }
+
+            phase = .done(chars: dictApplied.count)
+            floatingBar.setDone(chars: dictApplied.count)
 
             // After 1.5s the floatingBar auto-resets to .idle.
             // Hide the window to avoid leaking pixel space on screen.
