@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+import os.log
+
+private let appLog = Logger(subsystem: "com.mouthpiece.app", category: "App")
 
 @main
 struct MouthpieceApp: App {
@@ -27,22 +30,22 @@ struct MouthpieceApp: App {
             }
             .padding(8)
             .onAppear {
+                appLog.notice("📱 MenuBarExtra onAppear")
                 if coordinator == nil {
-                    print("[App] onAppear triggered, building coordinator...")
+                    appLog.notice("📱 Building coordinator...")
                     Task { @MainActor in
                         let coord = makeCoordinator()
-                        print("[App] Coordinator built, starting hotkey...")
+                        appLog.notice("📱 Coordinator built, starting hotkey...")
                         coord.start()
                         coordinator = coord
-                        print("[App] Mic permission status: \(coord.permission.microphone)")
-                        // Proactively request microphone permission on first launch
+                        appLog.notice("📱 Mic permission status: \(String(describing: coord.permission.microphone))")
                         if coord.permission.microphone == .notDetermined {
-                            print("[App] Requesting microphone permission proactively...")
+                            appLog.notice("📱 Requesting microphone permission proactively...")
                             _ = await coord.permission.requestMicrophone()
                         }
-                        print("[App] Loading model...")
+                        appLog.notice("📱 Loading model...")
                         await coord.loadModelIfNeeded()
-                        print("[App] Initial setup complete. Phase: \(coord.phase)")
+                        appLog.notice("📱 Initial setup complete. Phase: \(String(describing: coord.phase))")
                     }
                 }
             }

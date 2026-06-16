@@ -1,4 +1,7 @@
 import AppKit
+import os.log
+
+private let log = Logger(subsystem: "com.mouthpiece.app", category: "HotKey")
 
 @MainActor
 final class HotKeyManager {
@@ -19,21 +22,19 @@ final class HotKeyManager {
 
     func start() {
         guard globalMonitor == nil else { return }
-        print("[HotKey] start() called, triggerKey=\(triggerKey.rawValue), modifierFlag=\(String(describing: triggerKey.modifierFlag))")
+        log.notice("🎹 start() called, triggerKey=\(self.triggerKey.rawValue, privacy: .public)")
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            print("[HotKey] GLOBAL flagsChanged: \(event.modifierFlags.rawValue)")
             Task { @MainActor in
                 self?.handleFlagsChanged(flags: event.modifierFlags)
             }
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            print("[HotKey] LOCAL flagsChanged: \(event.modifierFlags.rawValue)")
             Task { @MainActor in
                 self?.handleFlagsChanged(flags: event.modifierFlags)
             }
             return event
         }
-        print("[HotKey] monitors installed: global=\(globalMonitor != nil) local=\(localMonitor != nil)")
+        log.notice("🎹 monitors installed: global=\(self.globalMonitor != nil) local=\(self.localMonitor != nil)")
     }
 
     func stop() {
@@ -58,11 +59,11 @@ final class HotKeyManager {
 
         if nowDown && !isPressed {
             isPressed = true
-            print("[HotKey] PRESSED")
+            log.notice("🎹 PRESSED")
             onEvent(.pressed)
         } else if !nowDown && isPressed {
             isPressed = false
-            print("[HotKey] RELEASED")
+            log.notice("🎹 RELEASED")
             onEvent(.released)
         }
     }

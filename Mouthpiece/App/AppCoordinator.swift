@@ -1,6 +1,9 @@
 import Foundation
 import AppKit
 import Observation
+import os.log
+
+private let log = Logger(subsystem: "com.mouthpiece.app", category: "Coordinator")
 
 @MainActor
 @Observable
@@ -59,7 +62,7 @@ final class AppCoordinator {
     }
 
     func start() {
-        print("[Coordinator] start() called")
+        log.notice("🟢 start() called")
         hotkey.start()
     }
 
@@ -68,7 +71,7 @@ final class AppCoordinator {
     }
 
     func handleHotkey(_ event: HotKeyEvent) {
-        print("[Coordinator] handleHotkey: \(event), current phase: \(phase)")
+        log.notice("🔑 handleHotkey: \(String(describing: event)), phase: \(String(describing: self.phase))")
         switch event {
         case .pressed:
             Task { await startRecording() }
@@ -78,21 +81,21 @@ final class AppCoordinator {
     }
 
     func loadModelIfNeeded() async {
-        print("[Coordinator] loadModelIfNeeded called")
+        log.notice("📦 loadModelIfNeeded called")
         let ready = await transcriber.isReady
-        print("[Coordinator] transcriber.isReady = \(ready)")
+        log.notice("📦 transcriber.isReady = \(ready)")
         guard !ready else {
-            print("[Coordinator] Model already ready, skipping load")
+            log.notice("📦 Model already ready, skipping")
             return
         }
         do {
-            print("[Coordinator] Calling transcriber.loadModel()...")
+            log.notice("📦 Calling transcriber.loadModel()...")
             try await transcriber.loadModel()
-            print("[Coordinator] loadModel succeeded! Now ready=\(await transcriber.isReady)")
+            log.notice("✅ loadModel succeeded!")
             // Reset error phase if we previously errored
             if case .error = phase { phase = .idle }
         } catch {
-            print("[Coordinator] loadModel FAILED: \(error)")
+            log.error("❌ loadModel FAILED: \(String(describing: error))")
             phase = .error("模型加载失败: \(error)")
             floatingBar.setError("模型加载失败")
             floatingWindow.showIfNeeded()
@@ -103,11 +106,11 @@ final class AppCoordinator {
 
     private func startRecording() async {
         guard phase == .idle else { return }
-        print("[Coordinator] startRecording: mic=\(permission.microphone), accessibility=\(permission.accessibility)")
+        log.notice("🎤 startRecording: mic=\(String(describing: self.permission.microphone))")
 
         // Permission gate
         guard permission.microphone == .granted else {
-            print("[Coordinator] Mic not granted, requesting now...")
+            log.notice("🎤 Mic not granted, requesting...")
             // Try to actively request — this triggers the system dialog
             Task {
                 _ = await permission.requestMicrophone()
