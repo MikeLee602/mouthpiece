@@ -1,5 +1,8 @@
 import AVFoundation
 import Observation
+import os.log
+
+private let log = Logger(subsystem: "com.mouthpiece.app", category: "Audio")
 
 /// Holds audio buffer state separate from the @MainActor class so the AVAudio render thread
 /// can mutate it without ever touching MainActor-isolated state.
@@ -7,14 +10,22 @@ final class AudioBufferStore: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.mouthpiece.audio-buffer")
     private var pendingChunks: [[Float]] = []
     private var _converter: AVAudioConverter?
+    private var _tapCallCount: Int = 0
 
     var converter: AVAudioConverter? {
         get { queue.sync { _converter } }
         set { queue.sync { _converter = newValue } }
     }
 
+    var tapCallCount: Int {
+        queue.sync { _tapCallCount }
+    }
+
     func append(_ chunk: [Float]) {
-        queue.sync { pendingChunks.append(chunk) }
+        queue.sync {
+            pendingChunks.append(chunk)
+            _tapCallCount += 1
+        }
     }
 
     func drain() -> [[Float]] {
@@ -26,7 +37,10 @@ final class AudioBufferStore: @unchecked Sendable {
     }
 
     func clear() {
-        queue.sync { pendingChunks.removeAll() }
+        queue.sync {
+            pendingChunks.removeAll()
+            _tapCallCount = 0
+        }
     }
 }
 
@@ -36,8 +50,8 @@ final class AudioRecorder: AudioRecording {
 
     private(set) var state: AudioRecorderState = .idle
 
-    private let engine = AVAudioEngine()
-    private let store = AudioBufferStore()
+    private var engine: AVAudioEngine?
+    private var store = AudioBufferStore()
     private var sampleBuffer: [Float] = []
     private var startTime: Date?
     private var timer: Timer?
@@ -50,8 +64,17 @@ final class AudioRecorder: AudioRecording {
     func start() throws {
         guard case .idle = state else { return }
 
+        // Build a fresh engine AND a fresh buffer store on each recording.
+        // AVAudioEngine doesn't reliably restart its tap after stop/start cycles
+        // in macOS 26, and reusing the store can leak in-flight chunks from the
+        // previous session.
+        let engine = AVAudioEngine()
+        self.engine = engine
+        self.store = AudioBufferStore()
+        let store = self.store
         let input = engine.inputNode
         let inputFormat = input.inputFormat(forBus: 0)
+        log.notice("🎤 inputFormat: sr=\(inputFormat.sampleRate), ch=\(inputFormat.channelCount), interleaved=\(inputFormat.isInterleaved)")
 
         guard let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -66,9 +89,6 @@ final class AudioRecorder: AudioRecording {
         sampleBuffer.removeAll(keepingCapacity: true)
         store.clear()
 
-        // Install the tap from a nonisolated context so the closure doesn't
-        // inherit @MainActor isolation (which would cause runtime traps when
-        // the audio render thread invokes it).
         Self.installTap(on: input, format: inputFormat, targetFormat: targetFormat, store: store)
 
         do {
@@ -81,6 +101,7 @@ final class AudioRecorder: AudioRecording {
         startTime = Date()
         state = .recording(elapsed: 0)
         startTimer()
+        log.notice("🎤 engine started, tap installed")
     }
 
     /// Nonisolated tap installer. Because this is `nonisolated static`, the closure
@@ -100,12 +121,15 @@ final class AudioRecorder: AudioRecording {
     func stop() async -> [Float] {
         timer?.invalidate()
         timer = nil
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        engine?.inputNode.removeTap(onBus: 0)
+        engine?.stop()
+        engine = nil
 
         // Drain pending chunks
         drainPending()
         let samples = sampleBuffer
+        let tapCount = store.tapCallCount
+        log.notice("🎤 stop: total samples=\(samples.count), tap callbacks fired=\(tapCount)")
         state = .finished(sampleCount: samples.count, sampleRate: Self.targetSampleRate)
         return samples
     }

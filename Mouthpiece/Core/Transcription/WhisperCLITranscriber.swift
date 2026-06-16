@@ -55,9 +55,8 @@ actor WhisperCLITranscriber: Transcribing {
         } catch {
             throw TranscriptionError.transcribeFailed("Failed to write temp WAV: \(error)")
         }
-        defer {
-            try? FileManager.default.removeItem(at: wavURL)
-        }
+        // DEBUG: keep WAV for inspection (was: defer cleanup)
+        log.notice("📂 WAV kept at: \(wavURL.path, privacy: .public) size=\(wavData.count) bytes, samples=\(samples.count), peakAbs=\(samples.map { abs($0) }.max() ?? 0)")
 
         let lang = language ?? "zh"
         log.notice("🎙 whisper-cli starting: samples=\(samples.count) lang=\(lang, privacy: .public) wav=\(wavURL.path, privacy: .public)")
