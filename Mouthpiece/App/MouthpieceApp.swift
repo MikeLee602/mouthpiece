@@ -4,57 +4,24 @@ import os.log
 
 private let appLog = Logger(subsystem: "com.mouthpiece.app", category: "App")
 
-@main
-struct MouthpieceApp: App {
+/// AppDelegate guarantees we initialize the coordinator at app launch,
+/// not lazily on first MenuBarExtra popup.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor static let shared = AppDelegate()
+    @MainActor private(set) var coordinator: AppCoordinator?
 
-    @State private var coordinator: AppCoordinator? = nil
-
-    var body: some Scene {
-        MenuBarExtra("Mouthpiece", image: "MenuBarIcon") {
-            VStack(alignment: .leading, spacing: 4) {
-                if let coord = coordinator {
-                    Text(statusLabel(for: coord.phase))
-                    Divider()
-                    Text("按住 Fn 开始录音").font(.caption).foregroundStyle(.secondary)
-                    Divider()
-                    Button("重新加载模型") {
-                        Task { @MainActor in
-                            await coord.loadModelIfNeeded()
-                        }
-                    }
-                } else {
-                    Text("初始化中…")
-                }
-                Divider()
-                Button("退出") { NSApp.terminate(nil) }
-            }
-            .padding(8)
-            .onAppear {
-                appLog.notice("📱 MenuBarExtra onAppear")
-                if coordinator == nil {
-                    appLog.notice("📱 Building coordinator...")
-                    Task { @MainActor in
-                        let coord = makeCoordinator()
-                        appLog.notice("📱 Coordinator built, starting hotkey...")
-                        coord.start()
-                        coordinator = coord
-                        appLog.notice("📱 Mic permission status: \(String(describing: coord.permission.microphone))")
-                        if coord.permission.microphone == .notDetermined {
-                            appLog.notice("📱 Requesting microphone permission proactively...")
-                            _ = await coord.permission.requestMicrophone()
-                        }
-                        appLog.notice("📱 Loading model...")
-                        await coord.loadModelIfNeeded()
-                        appLog.notice("📱 Initial setup complete. Phase: \(String(describing: coord.phase))")
-                    }
-                }
-            }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        appLog.notice("🚀 applicationDidFinishLaunching")
+        Task { @MainActor in
+            await self.bootstrap()
         }
-        .menuBarExtraStyle(.menu)
     }
 
     @MainActor
-    private func makeCoordinator() -> AppCoordinator {
+    func bootstrap() async {
+        guard coordinator == nil else { return }
+        appLog.notice("🚀 Building coordinator...")
+
         let permission = PermissionService()
         let recorder = AudioRecorder()
         let transcriber = WhisperCLITranscriber(
@@ -72,7 +39,58 @@ struct MouthpieceApp: App {
             floatingBar: bar,
             floatingWindow: window
         )
-        return coord
+        coord.start()
+        self.coordinator = coord
+
+        appLog.notice("🚀 Mic permission: \(String(describing: coord.permission.microphone))")
+        if coord.permission.microphone == .notDetermined {
+            appLog.notice("🚀 Requesting microphone permission proactively...")
+            _ = await coord.permission.requestMicrophone()
+        }
+        appLog.notice("🚀 Loading model...")
+        await coord.loadModelIfNeeded()
+        appLog.notice("🚀 Bootstrap complete. Phase: \(String(describing: coord.phase))")
+    }
+}
+
+@main
+struct MouthpieceApp: App {
+
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        MenuBarExtra("Mouthpiece", image: "MenuBarIcon") {
+            MenuView()
+        }
+        .menuBarExtraStyle(.menu)
+    }
+}
+
+private struct MenuView: View {
+    @State private var refreshTrigger: Int = 0
+
+    var body: some View {
+        let coord = AppDelegate.shared.coordinator
+        VStack(alignment: .leading, spacing: 4) {
+            if let coord {
+                Text(statusLabel(for: coord.phase))
+                Divider()
+                Text("按住 Fn 开始录音").font(.caption).foregroundStyle(.secondary)
+                Divider()
+                Button("重新加载模型") {
+                    Task { @MainActor in
+                        await coord.loadModelIfNeeded()
+                    }
+                }
+            } else {
+                Text("初始化中…")
+            }
+            Divider()
+            Button("退出") { NSApp.terminate(nil) }
+        }
+        .padding(8)
+        .id(refreshTrigger)
+        .onAppear { refreshTrigger += 1 }
     }
 
     private func statusLabel(for phase: AppCoordinator.Phase) -> String {
