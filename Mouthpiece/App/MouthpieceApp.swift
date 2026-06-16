@@ -7,7 +7,7 @@ struct MouthpieceApp: App {
     @State private var coordinator: AppCoordinator? = nil
 
     var body: some Scene {
-        MenuBarExtra("Mouthpiece", systemImage: "mic.fill") {
+        MenuBarExtra("Mouthpiece", image: "MenuBarIcon") {
             VStack(alignment: .leading, spacing: 4) {
                 if let coord = coordinator {
                     Text(statusLabel(for: coord.phase))
