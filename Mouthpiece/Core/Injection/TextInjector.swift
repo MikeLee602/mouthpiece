@@ -1,26 +1,39 @@
 import AppKit
 import CoreGraphics
+import os.log
+
+private let log = Logger(subsystem: "com.mouthpiece.app", category: "Injector")
 
 actor TextInjector: TextInjecting {
 
     func inject(_ text: String) async throws {
+        log.notice("💉 inject called with \(text.count, privacy: .public) chars")
         let trusted = await MainActor.run { AXIsProcessTrusted() }
+        log.notice("💉 AXIsProcessTrusted=\(trusted, privacy: .public)")
         guard trusted else {
             throw InjectionError.noAccessibilityPermission
         }
 
+        let frontApp = await MainActor.run { NSWorkspace.shared.frontmostApplication?.localizedName ?? "?" }
+        log.notice("💉 frontmost app: \(frontApp, privacy: .public)")
+
         // Save & write & restore must hop to MainActor for NSPasteboard safety
         let savedItems = await captureClipboard()
+        log.notice("💉 saved \(savedItems.count, privacy: .public) clipboard items")
 
         let writeOK = await writeClipboard(text)
+        log.notice("💉 writeClipboard ok=\(writeOK, privacy: .public)")
         guard writeOK else { throw InjectionError.clipboardWriteFailed }
 
+        log.notice("💉 posting Cmd+V…")
         try await postCmdV()
+        log.notice("💉 Cmd+V posted")
 
         // Wait for the paste action to complete in target app
         try? await Task.sleep(for: .milliseconds(120))
 
         await restoreClipboard(savedItems)
+        log.notice("💉 clipboard restored, inject done")
     }
 
     @MainActor
