@@ -38,11 +38,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let injector = TextInjector()
         let bar = FloatingBarState()
         let window = FloatingBarWindow(state: bar)
+        let history: HistoryStore
+        do {
+            history = try HistoryStore()
+        } catch {
+            appLog.error("🚀 Failed to init HistoryStore: \(String(describing: error))")
+            return  // App can't function without history; bail out cleanly
+        }
         let coord = AppCoordinator(
             permission: permission,
             recorder: recorder,
             transcriber: transcriber,
             injector: injector,
+            history: history,
             floatingBar: bar,
             floatingWindow: window
         )

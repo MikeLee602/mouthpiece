@@ -27,7 +27,9 @@ final class AppCoordinator {
     private let recorder: any AudioRecording
     private let transcriber: any Transcribing
     private let cleaner: TextCleaner
+    private let simplifier = SimplifiedChineseConverter()
     private let injector: any TextInjecting
+    private let history: HistoryStore
     let floatingBar: FloatingBarState
     private let floatingWindow: FloatingBarWindow
 
@@ -42,6 +44,7 @@ final class AppCoordinator {
         transcriber: any Transcribing,
         cleaner: TextCleaner = TextCleaner(),
         injector: any TextInjecting,
+        history: HistoryStore,
         floatingBar: FloatingBarState,
         floatingWindow: FloatingBarWindow,
         triggerKey: TriggerKey = .fn
@@ -51,6 +54,7 @@ final class AppCoordinator {
         self.transcriber = transcriber
         self.cleaner = cleaner
         self.injector = injector
+        self.history = history
         self.floatingBar = floatingBar
         self.floatingWindow = floatingWindow
         self.hotkey = HotKeyManager(triggerKey: triggerKey)
@@ -168,13 +172,27 @@ final class AppCoordinator {
             let cleaned = cleaner.clean(result.text, options: cleanOptions)
             log.notice("🏁 Cleaned: \(cleaned)")
 
+            let simplified = simplifier.convert(cleaned)
+            log.notice("🏁 Simplified: \(simplified, privacy: .public)")
+
             phase = .injecting
             log.notice("🏁 Calling injector.inject()...")
-            try await injector.inject(cleaned)
+            try await injector.inject(simplified)
 
-            // TODO P0-10: persist to history
-            phase = .done(chars: cleaned.count)
-            floatingBar.setDone(chars: cleaned.count)
+            // Persist history (best-effort)
+            let entry = TranscriptionEntryDraft(
+                timestamp: Date(),
+                rawText: result.text,
+                cleanedText: simplified,
+                language: result.language,
+                durationSeconds: result.durationSeconds,
+                appName: NSWorkspace.shared.frontmostApplication?.localizedName
+            )
+            history.save(entry)
+            log.notice("📝 Saved to history (\(entry.cleanedText.count) chars)")
+
+            phase = .done(chars: simplified.count)
+            floatingBar.setDone(chars: simplified.count)
 
             // After 1.5s the floatingBar auto-resets to .idle.
             // Hide the window to avoid leaking pixel space on screen.

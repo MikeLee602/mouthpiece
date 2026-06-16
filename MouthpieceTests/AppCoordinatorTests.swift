@@ -55,6 +55,7 @@ final class AppCoordinatorTests: XCTestCase {
             transcriber: trn,
             cleaner: TextCleaner(),
             injector: inj,
+            history: try! HistoryStore(inMemory: true),
             floatingBar: bar,
             floatingWindow: win
         )
