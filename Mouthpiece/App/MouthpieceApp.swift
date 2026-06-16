@@ -13,6 +13,12 @@ struct MouthpieceApp: App {
                     Text(statusLabel(for: coord.phase))
                     Divider()
                     Text("按住 Fn 开始录音").font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    Button("重新加载模型") {
+                        Task { @MainActor in
+                            await coord.loadModelIfNeeded()
+                        }
+                    }
                 } else {
                     Text("初始化中…")
                 }
@@ -22,17 +28,21 @@ struct MouthpieceApp: App {
             .padding(8)
             .onAppear {
                 if coordinator == nil {
+                    print("[App] onAppear triggered, building coordinator...")
                     Task { @MainActor in
                         let coord = makeCoordinator()
+                        print("[App] Coordinator built, starting hotkey...")
                         coord.start()
                         coordinator = coord
+                        print("[App] Mic permission status: \(coord.permission.microphone)")
                         // Proactively request microphone permission on first launch
-                        // so the system dialog appears before user tries Fn
                         if coord.permission.microphone == .notDetermined {
                             print("[App] Requesting microphone permission proactively...")
                             _ = await coord.permission.requestMicrophone()
                         }
+                        print("[App] Loading model...")
                         await coord.loadModelIfNeeded()
+                        print("[App] Initial setup complete. Phase: \(coord.phase)")
                     }
                 }
             }

@@ -78,11 +78,21 @@ final class AppCoordinator {
     }
 
     func loadModelIfNeeded() async {
+        print("[Coordinator] loadModelIfNeeded called")
         let ready = await transcriber.isReady
-        guard !ready else { return }
+        print("[Coordinator] transcriber.isReady = \(ready)")
+        guard !ready else {
+            print("[Coordinator] Model already ready, skipping load")
+            return
+        }
         do {
+            print("[Coordinator] Calling transcriber.loadModel()...")
             try await transcriber.loadModel()
+            print("[Coordinator] loadModel succeeded! Now ready=\(await transcriber.isReady)")
+            // Reset error phase if we previously errored
+            if case .error = phase { phase = .idle }
         } catch {
+            print("[Coordinator] loadModel FAILED: \(error)")
             phase = .error("模型加载失败: \(error)")
             floatingBar.setError("模型加载失败")
             floatingWindow.showIfNeeded()
