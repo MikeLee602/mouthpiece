@@ -57,7 +57,10 @@ struct MouthpieceApp: App {
     private func makeCoordinator() -> AppCoordinator {
         let permission = PermissionService()
         let recorder = AudioRecorder()
-        let transcriber = WhisperKitTranscriber(modelName: "openai_whisper-medium")
+        let transcriber = WhisperCLITranscriber(
+            binaryPath: "/opt/homebrew/bin/whisper-cli",
+            modelPath: "/opt/homebrew/share/whisper.cpp/ggml-medium.bin"
+        )
         let injector = TextInjector()
         let bar = FloatingBarState()
         let window = FloatingBarWindow(state: bar)
