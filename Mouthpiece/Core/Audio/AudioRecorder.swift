@@ -66,13 +66,10 @@ final class AudioRecorder: AudioRecording {
         sampleBuffer.removeAll(keepingCapacity: true)
         store.clear()
 
-        // Capture store and target format by value; both are Sendable.
-        let store = self.store
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
-            // We are on a real-time audio thread. DO NOT touch any MainActor state.
-            // We only use `store` (Sendable) and pure operations.
-            Self.processBuffer(buffer, targetFormat: targetFormat, store: store)
-        }
+        // Install the tap from a nonisolated context so the closure doesn't
+        // inherit @MainActor isolation (which would cause runtime traps when
+        // the audio render thread invokes it).
+        Self.installTap(on: input, format: inputFormat, targetFormat: targetFormat, store: store)
 
         do {
             try engine.start()
@@ -84,6 +81,20 @@ final class AudioRecorder: AudioRecording {
         startTime = Date()
         state = .recording(elapsed: 0)
         startTimer()
+    }
+
+    /// Nonisolated tap installer. Because this is `nonisolated static`, the closure
+    /// it constructs does NOT inherit MainActor isolation — Swift treats it as a
+    /// plain `@Sendable` callback, which is what AVAudioEngine expects.
+    nonisolated private static func installTap(
+        on input: AVAudioInputNode,
+        format: AVAudioFormat,
+        targetFormat: AVAudioFormat,
+        store: AudioBufferStore
+    ) {
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            processBuffer(buffer, targetFormat: targetFormat, store: store)
+        }
     }
 
     func stop() async -> [Float] {
