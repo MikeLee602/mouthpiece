@@ -18,6 +18,7 @@ struct StartupCheck {
     static func run(
         whisperBinary: String,
         whisperModel: String,
+        whisperSmallModel: String = "/opt/homebrew/share/whisper.cpp/ggml-small.bin",
         opencc: String = "/opt/homebrew/bin/opencc"
     ) -> [Issue] {
         var issues: [Issue] = []
@@ -37,6 +38,14 @@ struct StartupCheck {
                 title: "找不到 Whisper 模型",
                 detail: "路径：\(whisperModel)",
                 fixHint: "下载 ggml 模型并在 设置 → 转写 中选择文件"
+            ))
+        }
+        if !fm.fileExists(atPath: whisperSmallModel) {
+            issues.append(.init(
+                level: .warning,
+                title: "未安装 small 模型（实时预览将不可用）",
+                detail: "路径：\(whisperSmallModel)",
+                fixHint: "下载 ggml-small.bin 到该路径，启用录音中的实时蹦字预览。最终识别仍然走 medium 模型，质量不受影响。"
             ))
         }
         if !fm.fileExists(atPath: opencc) {
