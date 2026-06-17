@@ -39,6 +39,11 @@ final class AppCoordinator {
 
     /// 实时识别 — 给 floating bar 蹦字。可选；初始化时未必启动。
     private let live = LiveTranscriber()
+    /// 滑动窗口实时识别（whisper-cli small）—— D 方案 fallback。
+    private let streaming = StreamingTranscriber(
+        binaryPath: "/opt/homebrew/bin/whisper-cli",
+        modelPath: "/opt/homebrew/share/whisper.cpp/ggml-small.bin"
+    )
     /// 当前实时识别累积的最新 partial（finishRecording 时如果 whisper 失败会用它兜底）。
     private var lastLivePartial: String = ""
 
@@ -88,12 +93,25 @@ final class AppCoordinator {
             self?.floatingBar.updatePartial("")
         }
 
-        // 把 recorder 的 buffer 流式喂给 live transcriber
-        // listener 在 audio render thread 上调用，不能 capture MainActor self；
-        // 拿 live 的弱引用（live 是 MainActor，但 feed() 是 nonisolated 函数）
-        let liveBox = WeakBox(self.live)
+        // Streaming transcriber (whisper-cli small) → 实时蹦字 fallback
+        streaming.onPartial = { [weak self] text in
+            guard let self else { return }
+            self.lastLivePartial = text
+            self.floatingBar.updatePartial(text)
+        }
+
+        // 把 recorder 的 buffer 流式喂给 streaming —— 在 audio thread 上 resample 到 16k
         recorder.setBufferListener({ buffer in
-            liveBox.value?.feed(buffer: buffer)
+            // 提取 channel 0 的 float samples
+            guard let channelData = buffer.floatChannelData else { return }
+            let frameLen = Int(buffer.frameLength)
+            let raw = Array(UnsafeBufferPointer(start: channelData[0], count: frameLen))
+            // resample 48k → 16k 给 whisper 用
+            let resampled = AudioRecorder.resample(raw, from: buffer.format.sampleRate, to: 16000)
+            let unchecked = UncheckedSendable(resampled)
+            Task { @MainActor [weak self] in
+                self?.streaming.ingest(samples: unchecked.value)
+            }
         })
     }
 
@@ -199,12 +217,9 @@ final class AppCoordinator {
             floatingBar.startRecording()
             floatingWindow.showIfNeeded()
             startElapsedTimer()
-            // FIXME: SFSpeechRecognizer 在 macOS 26 + Swift 6 strict concurrency 下
-            // 实测无法接收 buffer-based request 的音频（daemon 启动正常但 0 partial）。
-            // 暂时关闭实时识别；明天用 whisper-cli 滑动窗口方案（A）重做。
+            // 启动滑动窗口实时识别（whisper-cli small）
             lastLivePartial = ""
-            // let lang = AppSettings.shared.transcriptionLanguage
-            // Task { await self.live.start(localeIdentifier: lang) }
+            streaming.start()
         } catch {
             phase = .error("\(error)")
             floatingBar.setError("\(error)")
@@ -223,8 +238,9 @@ final class AppCoordinator {
         log.notice("🏁 Calling recorder.stop()...")
         let samples = await recorder.stop()
         log.notice("🏁 Got \(samples.count) samples")
-        // 同时停 live；保留 lastLivePartial 给 floating bar 在 processing 阶段继续显示
+        // 同时停 live 和 streaming
         live.stop()
+        streaming.stop()
         phase = .transcribing
         floatingBar.setProcessing()
 
