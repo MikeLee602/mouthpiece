@@ -37,6 +37,11 @@ final class AppCoordinator {
     let floatingBar: FloatingBarState
     private let floatingWindow: FloatingBarWindow
 
+    /// 实时识别 — 给 floating bar 蹦字。可选；初始化时未必启动。
+    private let live = LiveTranscriber()
+    /// 当前实时识别累积的最新 partial（finishRecording 时如果 whisper 失败会用它兜底）。
+    private var lastLivePartial: String = ""
+
     var cleanOptions: CleanOptions = .default
 
     private var recordingTimer: Timer?
@@ -70,6 +75,26 @@ final class AppCoordinator {
         self.hotkey.replaceHandler { [weak self] event in
             self?.handleHotkey(event)
         }
+
+        // Live transcriber → 实时蹦字到 floating bar
+        live.onPartial = { [weak self] text in
+            guard let self else { return }
+            self.lastLivePartial = text
+            self.floatingBar.updatePartial(text)
+        }
+        live.onError = { [weak self] error in
+            // 实时识别失败不致命 — 继续录音，最终还是 whisper-cli 给结果。
+            log.error("Live transcribe error (non-fatal): \(error.localizedDescription, privacy: .public)")
+            self?.floatingBar.updatePartial("")
+        }
+
+        // 把 recorder 的 buffer 流式喂给 live transcriber
+        // listener 在 audio render thread 上调用，不能 capture MainActor self；
+        // 拿 live 的弱引用（live 是 MainActor，但 feed() 是 nonisolated 函数）
+        let liveBox = WeakBox(self.live)
+        recorder.setBufferListener({ buffer in
+            liveBox.value?.feed(buffer: buffer)
+        })
     }
 
     func start() {
@@ -174,6 +199,12 @@ final class AppCoordinator {
             floatingBar.startRecording()
             floatingWindow.showIfNeeded()
             startElapsedTimer()
+            // FIXME: SFSpeechRecognizer 在 macOS 26 + Swift 6 strict concurrency 下
+            // 实测无法接收 buffer-based request 的音频（daemon 启动正常但 0 partial）。
+            // 暂时关闭实时识别；明天用 whisper-cli 滑动窗口方案（A）重做。
+            lastLivePartial = ""
+            // let lang = AppSettings.shared.transcriptionLanguage
+            // Task { await self.live.start(localeIdentifier: lang) }
         } catch {
             phase = .error("\(error)")
             floatingBar.setError("\(error)")
@@ -192,6 +223,8 @@ final class AppCoordinator {
         log.notice("🏁 Calling recorder.stop()...")
         let samples = await recorder.stop()
         log.notice("🏁 Got \(samples.count) samples")
+        // 同时停 live；保留 lastLivePartial 给 floating bar 在 processing 阶段继续显示
+        live.stop()
         phase = .transcribing
         floatingBar.setProcessing()
 

@@ -3,8 +3,8 @@ import Observation
 
 enum FloatingBarKind: Equatable, Sendable {
     case idle
-    case recording(elapsed: TimeInterval, levels: [Float])
-    case processing
+    case recording(elapsed: TimeInterval, levels: [Float], partial: String)
+    case processing(partial: String)
     case done(chars: Int)
     case error(String)
 }
@@ -17,18 +17,33 @@ final class FloatingBarState {
 
     func startRecording() {
         cancelDismiss()
-        kind = .recording(elapsed: 0, levels: [])
+        kind = .recording(elapsed: 0, levels: [], partial: "")
     }
 
     func updateRecording(elapsed: TimeInterval, levels: [Float]) {
-        if case .recording = kind {
-            kind = .recording(elapsed: elapsed, levels: levels)
+        if case .recording(_, _, let partial) = kind {
+            kind = .recording(elapsed: elapsed, levels: levels, partial: partial)
+        }
+    }
+
+    /// 实时识别 partial 文本更新。
+    func updatePartial(_ text: String) {
+        switch kind {
+        case .recording(let elapsed, let levels, _):
+            kind = .recording(elapsed: elapsed, levels: levels, partial: text)
+        case .processing:
+            kind = .processing(partial: text)
+        default:
+            break
         }
     }
 
     func setProcessing() {
         cancelDismiss()
-        kind = .processing
+        // 保留 partial 文本作为「正在润色」时的占位
+        let carried: String
+        if case .recording(_, _, let p) = kind { carried = p } else { carried = "" }
+        kind = .processing(partial: carried)
     }
 
     func setDone(chars: Int) {

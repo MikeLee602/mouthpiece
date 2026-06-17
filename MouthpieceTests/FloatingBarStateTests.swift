@@ -12,9 +12,10 @@ final class FloatingBarStateTests: XCTestCase {
     func testStartRecording() {
         let s = FloatingBarState()
         s.startRecording()
-        if case .recording(let elapsed, let levels) = s.kind {
+        if case .recording(let elapsed, let levels, let partial) = s.kind {
             XCTAssertEqual(elapsed, 0)
             XCTAssertEqual(levels, [])
+            XCTAssertEqual(partial, "")
         } else {
             XCTFail("expected recording")
         }
@@ -24,7 +25,7 @@ final class FloatingBarStateTests: XCTestCase {
         let s = FloatingBarState()
         s.startRecording()
         s.updateRecording(elapsed: 2.5, levels: [0.1, 0.2, 0.3])
-        if case .recording(let elapsed, let levels) = s.kind {
+        if case .recording(let elapsed, let levels, _) = s.kind {
             XCTAssertEqual(elapsed, 2.5)
             XCTAssertEqual(levels, [0.1, 0.2, 0.3])
         } else {
@@ -32,10 +33,33 @@ final class FloatingBarStateTests: XCTestCase {
         }
     }
 
+    func testUpdatePartialDuringRecording() {
+        let s = FloatingBarState()
+        s.startRecording()
+        s.updatePartial("今天")
+        if case .recording(_, _, let partial) = s.kind {
+            XCTAssertEqual(partial, "今天")
+        } else {
+            XCTFail("expected recording with partial")
+        }
+        s.updatePartial("今天天气真好")
+        if case .recording(_, _, let partial) = s.kind {
+            XCTAssertEqual(partial, "今天天气真好")
+        }
+    }
+
+    func testProcessingCarriesPartial() {
+        let s = FloatingBarState()
+        s.startRecording()
+        s.updatePartial("hi")
+        s.setProcessing()
+        XCTAssertEqual(s.kind, .processing(partial: "hi"))
+    }
+
     func testProcessing() {
         let s = FloatingBarState()
         s.setProcessing()
-        XCTAssertEqual(s.kind, .processing)
+        XCTAssertEqual(s.kind, .processing(partial: ""))
     }
 
     func testDoneAutoDismiss() async {

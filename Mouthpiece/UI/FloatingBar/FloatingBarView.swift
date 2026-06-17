@@ -8,10 +8,10 @@ struct FloatingBarView: View {
             switch state.kind {
             case .idle:
                 EmptyView()
-            case .recording(let elapsed, let levels):
-                recordingPill(elapsed: elapsed, levels: levels)
-            case .processing:
-                processingPill
+            case .recording(let elapsed, let levels, let partial):
+                recordingPill(elapsed: elapsed, levels: levels, partial: partial)
+            case .processing(let partial):
+                processingPill(partial: partial)
             case .done(let n):
                 donePill(chars: n)
             case .error(let msg):
@@ -21,21 +21,35 @@ struct FloatingBarView: View {
         .animation(.snappy(duration: 0.2), value: state.kind)
     }
 
-    private func recordingPill(elapsed: TimeInterval, levels: [Float]) -> some View {
+    private func recordingPill(elapsed: TimeInterval, levels: [Float], partial: String) -> some View {
         pill {
             Circle()
                 .fill(.red)
                 .frame(width: 8, height: 8)
-            Text("听着呢")
+            if partial.isEmpty {
+                Text("听着呢")
+            } else {
+                Text(partial)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .frame(maxWidth: 360, alignment: .trailing)
+            }
             waveform(levels: levels)
             timer(elapsed: elapsed)
         }
     }
 
-    private var processingPill: some View {
+    private func processingPill(partial: String) -> some View {
         pill {
             ProgressView().controlSize(.small).tint(.white)
-            Text("润色中…")
+            if partial.isEmpty {
+                Text("润色中…")
+            } else {
+                Text(partial)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .frame(maxWidth: 360, alignment: .trailing)
+            }
         }
     }
 
@@ -97,13 +111,13 @@ struct FloatingBarView: View {
 
 #Preview("recording") {
     let s = FloatingBarState()
-    s.kind = .recording(elapsed: 3, levels: [0.2, 0.4, 0.6, 0.8, 0.5, 0.3])
+    s.kind = .recording(elapsed: 3, levels: [0.2, 0.4, 0.6, 0.8, 0.5, 0.3], partial: "今天天气真好")
     return FloatingBarView(state: s).padding(40).background(.gray.opacity(0.2))
 }
 
 #Preview("processing") {
     let s = FloatingBarState()
-    s.kind = .processing
+    s.kind = .processing(partial: "今天天气真好")
     return FloatingBarView(state: s).padding(40).background(.gray.opacity(0.2))
 }
 
