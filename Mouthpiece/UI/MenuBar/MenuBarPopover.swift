@@ -143,10 +143,18 @@ struct MenuBarPopover: View {
     private var hint: some View {
         HStack(spacing: 6) {
             Image(systemName: "command")
-            Text("按住 Fn 录音，松开自动粘贴")
+            Text(hintText)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+
+    private var hintText: String {
+        let key = AppSettings.shared.triggerKey.userLabel
+        switch AppSettings.shared.hotKeyMode {
+        case .pushToTalk: return "按住 \(key) 录音，松开自动粘贴"
+        case .toggle: return "按一下 \(key) 开始，再按一下停止"
+        }
     }
 
     private var recentsSection: some View {

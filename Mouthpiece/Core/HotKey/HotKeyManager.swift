@@ -6,13 +6,17 @@ private let log = Logger(subsystem: "com.mouthpiece.app", category: "HotKey")
 @MainActor
 final class HotKeyManager {
     private(set) var triggerKey: TriggerKey
+    private(set) var mode: HotKeyMode
     private var onEvent: @MainActor (HotKeyEvent) -> Void
     private var isPressed = false
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
-    init(triggerKey: TriggerKey, onEvent: @escaping @MainActor (HotKeyEvent) -> Void = { _ in }) {
+    init(triggerKey: TriggerKey,
+         mode: HotKeyMode = .pushToTalk,
+         onEvent: @escaping @MainActor (HotKeyEvent) -> Void = { _ in }) {
         self.triggerKey = triggerKey
+        self.mode = mode
         self.onEvent = onEvent
     }
 
@@ -33,6 +37,18 @@ final class HotKeyManager {
         self.triggerKey = key
         log.notice("🎹 triggerKey switched to \(key.rawValue, privacy: .public)")
         if wasRunning { start() }
+    }
+
+    /// 切换 push-to-talk / toggle 模式。
+    func setMode(_ newMode: HotKeyMode) {
+        guard newMode != mode else { return }
+        // 切换模式要重置内部状态，免得当前正在按着的状态被错误转译。
+        if isPressed {
+            isPressed = false
+            onEvent(.released)
+        }
+        self.mode = newMode
+        log.notice("🎹 mode switched to \(newMode.rawValue, privacy: .public)")
     }
 
     func start() {
@@ -72,14 +88,27 @@ final class HotKeyManager {
         guard let target = triggerKey.modifierFlag else { return }
         let nowDown = flags.contains(target)
 
-        if nowDown && !isPressed {
-            isPressed = true
-            log.notice("🎹 PRESSED")
-            onEvent(.pressed)
-        } else if !nowDown && isPressed {
-            isPressed = false
-            log.notice("🎹 RELEASED")
-            onEvent(.released)
+        switch mode {
+        case .pushToTalk:
+            if nowDown && !isPressed {
+                isPressed = true
+                log.notice("🎹 PRESSED")
+                onEvent(.pressed)
+            } else if !nowDown && isPressed {
+                isPressed = false
+                log.notice("🎹 RELEASED")
+                onEvent(.released)
+            }
+        case .toggle:
+            // 只在「按下」边缘触发 toggled，按下到释放这段「按住」过程不动作。
+            if nowDown && !isPressed {
+                isPressed = true
+                log.notice("🎹 TOGGLED")
+                onEvent(.toggled)
+            } else if !nowDown && isPressed {
+                isPressed = false
+                // toggle 模式下不发 .released
+            }
         }
     }
 

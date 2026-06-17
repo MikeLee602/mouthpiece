@@ -19,4 +19,21 @@ enum TriggerKey: String, CaseIterable, Codable, Sendable {
 enum HotKeyEvent: Equatable, Sendable {
     case pressed
     case released
+    /// Toggle 模式下用——一次按下 = 切换录音状态。
+    case toggled
+}
+
+/// 触发语义：按住 vs 切换。
+enum HotKeyMode: String, CaseIterable, Codable, Sendable {
+    /// 按住录音，松开停止（默认 / 经典）。
+    case pushToTalk = "push-to-talk"
+    /// 按一下开始，再按一下停止。
+    case toggle = "toggle"
+
+    var displayName: String {
+        switch self {
+        case .pushToTalk: return "按住说话"
+        case .toggle: return "按一下开始 / 再按一下停止"
+        }
+    }
 }

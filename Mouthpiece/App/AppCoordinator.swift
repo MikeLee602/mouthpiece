@@ -52,7 +52,8 @@ final class AppCoordinator {
         dictionary: DictionaryStore,
         floatingBar: FloatingBarState,
         floatingWindow: FloatingBarWindow,
-        triggerKey: TriggerKey = .fn
+        triggerKey: TriggerKey = .fn,
+        hotKeyMode: HotKeyMode = .pushToTalk
     ) {
         self.permission = permission
         self.recorder = recorder
@@ -63,7 +64,7 @@ final class AppCoordinator {
         self.dictionary = dictionary
         self.floatingBar = floatingBar
         self.floatingWindow = floatingWindow
-        self.hotkey = HotKeyManager(triggerKey: triggerKey)
+        self.hotkey = HotKeyManager(triggerKey: triggerKey, mode: hotKeyMode)
 
         // Wire up the hotkey handler now that self exists.
         self.hotkey.replaceHandler { [weak self] event in
@@ -81,8 +82,14 @@ final class AppCoordinator {
         hotkey.setTriggerKey(key)
     }
 
+    /// 切换触发模式（push-to-talk vs toggle）。
+    func setHotKeyMode(_ mode: HotKeyMode) {
+        hotkey.setMode(mode)
+    }
+
     /// 当前触发键。
     var currentTriggerKey: TriggerKey { hotkey.triggerKey }
+    var currentHotKeyMode: HotKeyMode { hotkey.mode }
 
     func stop() {
         hotkey.stop()
@@ -95,6 +102,17 @@ final class AppCoordinator {
             Task { await startRecording() }
         case .released:
             Task { await finishRecording() }
+        case .toggled:
+            // toggle 模式：当前在 idle/error/done → 开始；否则 → 停止
+            switch phase {
+            case .idle, .error, .done:
+                Task { await startRecording() }
+            case .recording:
+                Task { await finishRecording() }
+            case .transcribing, .cleaning, .injecting:
+                // 处理中再按一下 → 忽略，避免抢占
+                log.notice("🔑 toggle ignored (phase busy)")
+            }
         }
     }
 

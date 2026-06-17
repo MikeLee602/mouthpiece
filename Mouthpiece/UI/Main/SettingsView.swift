@@ -47,6 +47,13 @@ private struct GeneralSettingsView: View {
 private struct RecordingSettingsView: View {
     @State private var settings = AppSettings.shared
 
+    private var modeHint: String {
+        switch settings.hotKeyMode {
+        case .pushToTalk: return "按住所选键开始录音，松开自动停止并转写。适合短句。"
+        case .toggle: return "按一下开始，再按一下停止并转写。适合长句、解放手指。"
+        }
+    }
+
     var body: some View {
         Form {
             Section("触发键") {
@@ -55,7 +62,12 @@ private struct RecordingSettingsView: View {
                         Text(k.userLabel).tag(k)
                     }
                 }
-                Text("按住所选键开始录音，松开停止并自动转写。Fn 在大部分 Mac 上最方便。")
+                Picker("触发方式", selection: $settings.hotKeyMode) {
+                    ForEach(HotKeyMode.allCases, id: \.self) { m in
+                        Text(m.displayName).tag(m)
+                    }
+                }
+                Text(modeHint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

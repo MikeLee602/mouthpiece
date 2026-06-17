@@ -59,7 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dictionary: dictionary,
             floatingBar: bar,
             floatingWindow: window,
-            triggerKey: settings.triggerKey
+            triggerKey: settings.triggerKey,
+            hotKeyMode: settings.hotKeyMode
         )
         coord.start()
         self.coordinator = coord
@@ -67,6 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hot-swap trigger key when user changes it in Settings.
         settings.onTriggerKeyChange = { [weak coord] key in
             coord?.setTriggerKey(key)
+        }
+        settings.onHotKeyModeChange = { [weak coord] mode in
+            coord?.setHotKeyMode(mode)
         }
 
         appLog.notice("🚀 Mic permission: \(String(describing: coord.permission.microphone))")

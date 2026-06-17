@@ -38,6 +38,9 @@ final class AppSettings {
     var triggerKey: TriggerKey {
         didSet { write(); onTriggerKeyChange?(triggerKey) }
     }
+    var hotKeyMode: HotKeyMode {
+        didSet { write(); onHotKeyModeChange?(hotKeyMode) }
+    }
     var maxRecordingSeconds: Int {  // 60..1800
         didSet { write() }
     }
@@ -63,6 +66,7 @@ final class AppSettings {
 
     // MARK: - hooks
     var onTriggerKeyChange: ((TriggerKey) -> Void)?
+    var onHotKeyModeChange: ((HotKeyMode) -> Void)?
 
     // MARK: - 内部
     private let defaults: UserDefaults
@@ -73,6 +77,7 @@ final class AppSettings {
         self.showInDock = defaults.bool(forKey: Keys.showInDock)
         self.notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? true
         self.triggerKey = TriggerKey(rawValue: defaults.string(forKey: Keys.triggerKey) ?? "") ?? .fn
+        self.hotKeyMode = HotKeyMode(rawValue: defaults.string(forKey: Keys.hotKeyMode) ?? "") ?? .toggle
         self.maxRecordingSeconds = defaults.object(forKey: Keys.maxRecordingSeconds) as? Int ?? 600
         self.soundFeedback = defaults.object(forKey: Keys.soundFeedback) as? Bool ?? true
         self.transcriptionLanguage = defaults.string(forKey: Keys.transcriptionLanguage) ?? "zh"
@@ -88,6 +93,7 @@ final class AppSettings {
         defaults.set(showInDock, forKey: Keys.showInDock)
         defaults.set(notificationsEnabled, forKey: Keys.notificationsEnabled)
         defaults.set(triggerKey.rawValue, forKey: Keys.triggerKey)
+        defaults.set(hotKeyMode.rawValue, forKey: Keys.hotKeyMode)
         defaults.set(maxRecordingSeconds, forKey: Keys.maxRecordingSeconds)
         defaults.set(soundFeedback, forKey: Keys.soundFeedback)
         defaults.set(transcriptionLanguage, forKey: Keys.transcriptionLanguage)
@@ -111,6 +117,7 @@ final class AppSettings {
         static let showInDock = "settings.showInDock"
         static let notificationsEnabled = "settings.notificationsEnabled"
         static let triggerKey = "settings.triggerKey"
+        static let hotKeyMode = "settings.hotKeyMode"
         static let maxRecordingSeconds = "settings.maxRecordingSeconds"
         static let soundFeedback = "settings.soundFeedback"
         static let transcriptionLanguage = "settings.transcriptionLanguage"
