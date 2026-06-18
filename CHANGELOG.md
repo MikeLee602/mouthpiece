@@ -1,0 +1,31 @@
+# Changelog
+
+## v0.1.0 — 2026-06-18 (initial release)
+
+第一个公开版本。MVP + 主要功能都到位，签名是 ad-hoc（未公证），需用户手动绕 Gatekeeper。
+
+### 功能
+
+- 🎙️ **录音**：按住 `Fn` 或按一下切换录音状态（默认 toggle 模式）
+- ⚡ **实时识别**：录音时滑动窗口跑 whisper-cli small，floating bar 实时蹦字
+- 🎯 **最终识别**：停止后跑 whisper-cli medium 出高质量版本，自动粘贴到当前 App
+- 🧹 **后处理**：去填充词、合并重复句、繁→简（OpenCC）、词典自动替换
+- 📚 **历史**：SwiftData 持久化、搜索、JSON 导出、多选删除（自动 30 天清理）
+- 📖 **词典**：识别错词的规则替换（启用/禁用 / 忽略大小写）
+- 📊 **仪表盘**：今日 / 本周 / 累计字数 + 7 天柱图 + 最近 10 条
+- ⚙️ **设置**：5 tab — 通用 / 录音 / 转写 / 后处理 / 关于
+
+### 已知限制
+
+- DMG 未经 Apple 公证，首次启动会触发 Gatekeeper 警告（README 有绕过方法）
+- 实时识别需要额外下载 small 模型（466 MB），未装的话只有最终识别可用
+- partial 末尾偶尔出现 2-4 字短重叠（whisper small 同窗多次识别细微漂移）—— final medium 不受影响
+- App Store 通道暂未开（whisper-cli subprocess 依赖 sandbox=false）
+
+### 测试
+
+83 个单元测试全过。
+
+---
+
+合作 / 反馈 / Bug：[GitHub Issues](https://github.com/MikeLee602/mouthpiece/issues)
