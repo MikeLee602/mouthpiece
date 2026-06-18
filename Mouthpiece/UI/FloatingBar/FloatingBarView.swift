@@ -29,10 +29,12 @@ struct FloatingBarView: View {
             if partial.isEmpty {
                 Text("听着呢")
             } else {
+                // partial 越长 bar 越宽（FloatingBarWindow 自适应内容大小）
+                // 极长时 head-truncate 保留最近的字
                 Text(partial)
                     .lineLimit(1)
                     .truncationMode(.head)
-                    .frame(maxWidth: 360, alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             waveform(levels: levels)
             timer(elapsed: elapsed)
@@ -48,7 +50,7 @@ struct FloatingBarView: View {
                 Text(partial)
                     .lineLimit(1)
                     .truncationMode(.head)
-                    .frame(maxWidth: 360, alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
     }

@@ -82,12 +82,12 @@ final class AppCoordinatorTests: XCTestCase {
         let (coord, _, _, _) = await makeCoordinator(transcriberReady: false)
         // Simulate Fn press
         coord.handleHotkey(.pressed)
-        try? await Task.sleep(for: .milliseconds(400))
-        // Phase should be error if mic granted, or also error if mic not granted
-        if case .error = coord.phase {
-            // ok
-        } else {
-            XCTFail("expected error phase, got \(coord.phase)")
+        // Poll for phase to become .error — startRecording is async and CI is sometimes slow.
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            if case .error = coord.phase { return }
+            try? await Task.sleep(for: .milliseconds(50))
         }
+        XCTFail("expected error phase within 2s, got \(coord.phase)")
     }
 }

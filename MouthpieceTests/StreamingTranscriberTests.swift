@@ -7,6 +7,10 @@ final class StreamingTranscriberTests: XCTestCase {
         XCTAssertTrue(StreamingTranscriber.isHallucination("(字幕製作:貝爾)"))
         XCTAssertTrue(StreamingTranscriber.isHallucination("感謝觀看"))
         XCTAssertTrue(StreamingTranscriber.isHallucination("Subtitles by community"))
+        // 实测漏过的 short bracket-only 幻觉
+        XCTAssertTrue(StreamingTranscriber.isHallucination("(在這裡)"))
+        XCTAssertTrue(StreamingTranscriber.isHallucination("(背景音)"))
+        XCTAssertTrue(StreamingTranscriber.isHallucination("（噪音）"))
         XCTAssertFalse(StreamingTranscriber.isHallucination("这是一个测试"))
         XCTAssertFalse(StreamingTranscriber.isHallucination("今天天气真好"))
     }

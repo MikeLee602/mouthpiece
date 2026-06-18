@@ -27,6 +27,9 @@ final class StreamingTranscriber {
     let windowSeconds: Double
     /// 每隔多久跑一次（秒）。
     let stepSeconds: Double
+    /// 简繁转换器（可选）。partial 出来如果是繁体，转简后再做累积合并，
+    /// 否则跨次比对会因「現在」/「现在」找不到重叠产生重复。
+    let simplifier: SimplifiedChineseConverter?
 
     private var samples: [Float] = []
     private var timer: Timer?
@@ -46,12 +49,14 @@ final class StreamingTranscriber {
          modelPath: String,
          sampleRate: Double = 16000,
          windowSeconds: Double = 4.0,
-         stepSeconds: Double = 2.0) {
+         stepSeconds: Double = 2.0,
+         simplifier: SimplifiedChineseConverter? = SimplifiedChineseConverter()) {
         self.binaryPath = binaryPath
         self.modelPath = modelPath
         self.sampleRate = sampleRate
         self.windowSeconds = windowSeconds
         self.stepSeconds = stepSeconds
+        self.simplifier = simplifier
     }
 
     func start() {
@@ -101,19 +106,24 @@ final class StreamingTranscriber {
         inflight = true
         let bin = binaryPath
         let model = modelPath
+        let simp = simplifier
         Task.detached(priority: .userInitiated) { [weak self] in
-            let text = await Self.runWhisper(binaryPath: bin, modelPath: model, samples: window)
+            let raw = await Self.runWhisper(binaryPath: bin, modelPath: model, samples: window)
+            // 繁→简归一化（在 background task 跑 OpenCC 进程，不阻塞 main）
+            let text: String?
+            if let raw, let simp {
+                text = simp.convert(raw)
+            } else {
+                text = raw
+            }
             await MainActor.run {
                 guard let self else { return }
                 self.inflight = false
                 guard let text, !text.isEmpty else { return }
-                // 过滤典型幻觉行（whisper 在静音段会蹦出"字幕製作"等）
                 if Self.isHallucination(text) {
                     log.notice("🌀 partial dropped (hallucination): \(text, privacy: .public)")
                     return
                 }
-                // 累积逻辑：把上一段 lastTail 和这一段 text 找 LCS（共同前缀），
-                // 之前的部分提交到 committed，新的部分作为 lastTail。
                 self.mergePartial(text)
                 let merged = self.committed + self.lastTail
                 log.notice("🌀 partial: \(merged, privacy: .public)")
@@ -179,16 +189,15 @@ final class StreamingTranscriber {
         return idx
     }
 
-    /// 模糊后缀-前缀重叠：找 a 后缀和 b 前缀字符相似度 >= 80% 的最长长度。
+    /// 模糊后缀-前缀重叠：找 a 后缀和 b 前缀字符相似度 >= 67% 的最长长度。
     /// 容忍 whisper 在同一段音频识别出的微小差异（如「使用」vs「是用」）。
+    /// minLen=3 + 67% 比例对中文 partial 末尾常见的 2-4 字重叠效果好。
     nonisolated static func fuzzySuffixPrefix(_ a: String, _ b: String) -> Int {
         let aChars = Array(a)
         let bChars = Array(b)
         let maxLen = min(aChars.count, bChars.count)
-        // 至少要 4 字才算"重叠"，避免随机匹配
-        let minLen = 4
+        let minLen = 3
         guard maxLen >= minLen else { return 0 }
-        // 从大到小试，找到第一个 >=80% 字符匹配的就是最大重叠
         for len in stride(from: maxLen, through: minLen, by: -1) {
             let aSuf = Array(aChars.suffix(len))
             let bPre = Array(bChars.prefix(len))
@@ -196,8 +205,8 @@ final class StreamingTranscriber {
             for i in 0..<len where aSuf[i] == bPre[i] {
                 matches += 1
             }
-            // 80% 字符一致即视作重叠（中文 4 字至少 4 个里 3 个匹配）
-            if Double(matches) / Double(len) >= 0.8 {
+            // 67%（3 字里至少 2 字一样）即视作重叠
+            if Double(matches) / Double(len) >= 0.67 {
                 return len
             }
         }
@@ -206,13 +215,18 @@ final class StreamingTranscriber {
 
     /// 检测明显的 whisper 幻觉行
     nonisolated static func isHallucination(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let hallmarks = [
             "字幕製作", "字幕制作", "字幕由", "字幕组",
             "請訂閱", "请订阅", "感謝觀看", "感谢观看",
             "謝謝", "MBC 뉴스", "ご視聴", "Thanks for watching",
             "Subtitles by", "Translated by",
         ]
-        for m in hallmarks where text.contains(m) {
+        for m in hallmarks where trimmed.contains(m) {
+            return true
+        }
+        // 短到只剩括号 / 只是「(在這裡)」「(背景音)」之类的也是幻觉
+        if trimmed.count <= 6, trimmed.first == "(" || trimmed.first == "（" {
             return true
         }
         return false
