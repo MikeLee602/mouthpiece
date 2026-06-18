@@ -241,6 +241,15 @@ final class AppCoordinator {
         // 同时停 live 和 streaming
         live.stop()
         streaming.stop()
+
+        // 太短的录音（< 1 秒）99% 是误触 + 噪声，直接丢弃避免 whisper 幻觉
+        if samples.count < 16000 {
+            log.notice("🏁 Recording too short (\(samples.count) samples), discarding")
+            phase = .idle
+            floatingWindow.hideIfIdle()
+            return
+        }
+
         phase = .transcribing
         floatingBar.setProcessing()
 
@@ -265,6 +274,20 @@ final class AppCoordinator {
             let dictApplied = dictionary.snapshot().apply(to: simplified)
             if dictApplied != simplified {
                 log.notice("🏁 Dictionary applied: \(dictApplied, privacy: .public)")
+            }
+
+            // 幻觉过滤：whisper medium 在静音段也会蹦出"字幕製作:貝爾"等。
+            // 如果整段就是这种系统训练残留，就什么都不注入。
+            if StreamingTranscriber.isHallucination(dictApplied) {
+                log.notice("🏁 Final dropped (hallucination): \(dictApplied, privacy: .public)")
+                phase = .error("没听清，请再试一次")
+                floatingBar.setError("没听清")
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    self.floatingWindow.hideIfIdle()
+                    self.phase = .idle
+                }
+                return
             }
 
             phase = .injecting

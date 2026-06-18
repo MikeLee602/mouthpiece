@@ -123,9 +123,9 @@ final class StreamingTranscriber {
     }
 
     /// 合并新 partial 到累积状态。
-    /// 关键挑战：whisper 同一段音频跑两次结果可能有标点/空格差异，
+    /// 关键挑战：whisper 同一段音频跑两次结果可能有标点/空格/字符差异，
     /// 严格 prefix 匹配会丢掉重叠，导致重复。所以比较时用"骨架"
-    /// （去除标点空格）。
+    /// （去除标点空格）+ 容忍少量字符差异（如「使」vs「是」）。
     func mergePartial(_ newTail: String) {
         if lastTail.isEmpty {
             lastTail = newTail
@@ -138,11 +138,10 @@ final class StreamingTranscriber {
             lastTail = newTail
             return
         }
-        // 滑窗滚动了 — 找 oldSkel 后缀和 newSkel 前缀的重叠
-        let overlap = Self.longestSuffixPrefix(oldSkel, newSkel)
+        // 模糊后缀-前缀重叠：允许少量字符差异
+        let overlap = Self.fuzzySuffixPrefix(oldSkel, newSkel)
         if overlap > 0 {
             // 把 lastTail 中"对应到 oldSkel 前 (count - overlap) 字符"的那部分 commit
-            // 因为 skeleton 长度 != 原文长度（标点空格被去了），需要按 skeleton 字符索引找原文切点
             let commitSkelLen = oldSkel.count - overlap
             let cutIdx = Self.indexInOriginal(skeletonPrefixCount: commitSkelLen, original: lastTail)
             let commitPart = String(lastTail.prefix(cutIdx))
@@ -178,6 +177,31 @@ final class StreamingTranscriber {
             idx += 1
         }
         return idx
+    }
+
+    /// 模糊后缀-前缀重叠：找 a 后缀和 b 前缀字符相似度 >= 80% 的最长长度。
+    /// 容忍 whisper 在同一段音频识别出的微小差异（如「使用」vs「是用」）。
+    nonisolated static func fuzzySuffixPrefix(_ a: String, _ b: String) -> Int {
+        let aChars = Array(a)
+        let bChars = Array(b)
+        let maxLen = min(aChars.count, bChars.count)
+        // 至少要 4 字才算"重叠"，避免随机匹配
+        let minLen = 4
+        guard maxLen >= minLen else { return 0 }
+        // 从大到小试，找到第一个 >=80% 字符匹配的就是最大重叠
+        for len in stride(from: maxLen, through: minLen, by: -1) {
+            let aSuf = Array(aChars.suffix(len))
+            let bPre = Array(bChars.prefix(len))
+            var matches = 0
+            for i in 0..<len where aSuf[i] == bPre[i] {
+                matches += 1
+            }
+            // 80% 字符一致即视作重叠（中文 4 字至少 4 个里 3 个匹配）
+            if Double(matches) / Double(len) >= 0.8 {
+                return len
+            }
+        }
+        return 0
     }
 
     /// 检测明显的 whisper 幻觉行

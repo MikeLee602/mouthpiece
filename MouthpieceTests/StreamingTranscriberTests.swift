@@ -81,4 +81,40 @@ final class StreamingTranscriberTests: XCTestCase {
         // "这是, 一个" 取前 3 字 = "这是一" → 切到第 5 个字符（"这是, 一"）
         XCTAssertEqual(StreamingTranscriber.indexInOriginal(skeletonPrefixCount: 3, original: "这是, 一个"), 5)
     }
+
+    func testFuzzySuffixPrefixExact() {
+        // 至少要 4 字才认作重叠
+        XCTAssertEqual(StreamingTranscriber.fuzzySuffixPrefix("这是一次测试", "测试任务"), 0)
+        // 4 字以上的重叠正常返回
+        XCTAssertEqual(StreamingTranscriber.fuzzySuffixPrefix("abcdefgh", "efghxyzw"), 4)
+    }
+
+    func testFuzzySuffixPrefixToleratesOneOff() {
+        // 真实 whisper bug：「这是一次测试使用」+「这是一次测试是用vscode...」
+        // 「使用」vs「是用」一字不同；6 字重叠 5/6 = 83% 应该判为重叠
+        let oldSkel = "这是一次测试使用"
+        let newSkel = "这是一次测试是用vscode进行测试时间10秒"
+        let overlap = StreamingTranscriber.fuzzySuffixPrefix(oldSkel, newSkel)
+        XCTAssertGreaterThanOrEqual(overlap, 6, "应找到 \(overlap) 字重叠")
+    }
+
+    func testFuzzySuffixPrefixRejectsShortMatch() {
+        // 不到 4 字的"重叠"不算
+        XCTAssertEqual(StreamingTranscriber.fuzzySuffixPrefix("abcXY", "XYdef"), 0)
+    }
+
+    @MainActor
+    func testMergeWhisperRecognitionDrift() {
+        // 端到端复现真实 bug：首段「这是一次测试使用」+ 二段「这是一次测试是用vscode进行测试时间10秒」
+        // 二段几乎完整覆盖了一段（8 字里 7 字相同 = 87.5%）→ fuzzy match 8 字
+        // 期望：commit ""，lastTail = 第二段全部，无重复
+        let s = StreamingTranscriber(binaryPath: "/dev/null", modelPath: "/dev/null")
+        s.lastTail = "这是一次测试使用"
+        s.mergePartial("这是一次测试是用vscode进行测试时间10秒")
+        XCTAssertEqual(s.lastTail, "这是一次测试是用vscode进行测试时间10秒")
+        // 最关键：合并后总文本不能包含两次「这是一次测试」
+        let merged = s.committed + s.lastTail
+        let occurrences = merged.components(separatedBy: "这是一次测试").count - 1
+        XCTAssertEqual(occurrences, 1, "expected single occurrence, got: '\(merged)'")
+    }
 }
