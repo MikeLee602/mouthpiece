@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.1 — 2026-06-21
+
+修两个 v0.1.0 实测发现的 bug：
+
+- **修复 app 偶尔被 macOS 自动 terminate**：菜单栏 app 长时间空闲被 AppKit
+  AutomaticTermination 回收，按 Fn 没反应。Info.plist 加
+  `NSSupportsAutomaticTermination=false` + `NSSupportsSuddenTermination=false`
+- **扩展幻觉词表**：v0.1.0 漏过的幻觉句子「(字幕君:我看不懂...)」「感謝收看」
+  「謝謝大家」等加进过滤；测试也加了对应 case
+
+测试 83 → 仍全过。
+
 ## v0.1.0 — 2026-06-18 (initial release)
 
 第一个公开版本。MVP + 主要功能都到位，签名是 ad-hoc（未公证），需用户手动绕 Gatekeeper。

@@ -11,6 +11,9 @@ final class StreamingTranscriberTests: XCTestCase {
         XCTAssertTrue(StreamingTranscriber.isHallucination("(在這裡)"))
         XCTAssertTrue(StreamingTranscriber.isHallucination("(背景音)"))
         XCTAssertTrue(StreamingTranscriber.isHallucination("（噪音）"))
+        // v0.1.0 实测漏过：「字幕君」「我看不懂」
+        XCTAssertTrue(StreamingTranscriber.isHallucination("(字幕君:我看不懂,请问你会不会用音乐?我看不懂)"))
+        XCTAssertTrue(StreamingTranscriber.isHallucination("感謝收看"))
         XCTAssertFalse(StreamingTranscriber.isHallucination("这是一个测试"))
         XCTAssertFalse(StreamingTranscriber.isHallucination("今天天气真好"))
     }

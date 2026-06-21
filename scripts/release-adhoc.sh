@@ -70,7 +70,7 @@ mkdir -p "$EXPORT_DIR"
 cp -R "$ARCHIVED_APP" "$EXPORT_DIR/"
 
 echo ""
-echo "▶ Ad-hoc 签名（identifier=$BUNDLE_ID）..."
+echo "▶ Ad-hoc 签名 (identifier=${BUNDLE_ID})..."
 codesign --force --deep --sign - \
   --identifier "$BUNDLE_ID" \
   --entitlements "$ENT" \

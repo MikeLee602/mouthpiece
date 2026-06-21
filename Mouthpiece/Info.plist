@@ -30,5 +30,9 @@
 	<string>Mouthpiece 需要麦克风权限将你的语音转为文字。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Mouthpiece 用 macOS 内置语音识别在录音时实时显示预览文字。</string>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
 </dict>
 </plist>

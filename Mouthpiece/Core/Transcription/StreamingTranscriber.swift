@@ -217,15 +217,20 @@ final class StreamingTranscriber {
     nonisolated static func isHallucination(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let hallmarks = [
-            "字幕製作", "字幕制作", "字幕由", "字幕组",
-            "請訂閱", "请订阅", "感謝觀看", "感谢观看",
-            "謝謝", "MBC 뉴스", "ご視聴", "Thanks for watching",
-            "Subtitles by", "Translated by",
+            // YouTube / 字幕组幻觉
+            "字幕製作", "字幕制作", "字幕由", "字幕组", "字幕君",
+            "請訂閱", "请订阅", "感謝觀看", "感谢观看", "感謝收看", "感谢收看",
+            "謝謝", "謝謝大家",
+            // 多语言版本
+            "MBC 뉴스", "ご視聴", "ご清聴", "Thanks for watching",
+            "Subtitles by", "Translated by", "Please subscribe",
+            // 系统训练数据残留
+            "我看不懂",
         ]
         for m in hallmarks where trimmed.contains(m) {
             return true
         }
-        // 短到只剩括号 / 只是「(在這裡)」「(背景音)」之类的也是幻觉
+        // 短到只剩括号 / 「(在這裡)」「(背景音)」之类的也是幻觉
         if trimmed.count <= 6, trimmed.first == "(" || trimmed.first == "（" {
             return true
         }
