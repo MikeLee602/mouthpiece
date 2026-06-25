@@ -5,6 +5,7 @@ enum FloatingBarKind: Equatable, Sendable {
     case idle
     case recording(elapsed: TimeInterval, levels: [Float], partial: String)
     case processing(partial: String)
+    case polishing(partial: String)
     case done(chars: Int)
     case error(String)
 }
@@ -33,6 +34,8 @@ final class FloatingBarState {
             kind = .recording(elapsed: elapsed, levels: levels, partial: text)
         case .processing:
             kind = .processing(partial: text)
+        case .polishing:
+            kind = .polishing(partial: text)
         default:
             break
         }
@@ -44,6 +47,17 @@ final class FloatingBarState {
         let carried: String
         if case .recording(_, _, let p) = kind { carried = p } else { carried = "" }
         kind = .processing(partial: carried)
+    }
+
+    func setPolishing() {
+        cancelDismiss()
+        let carried: String
+        switch kind {
+        case .processing(let p): carried = p
+        case .recording(_, _, let p): carried = p
+        default: carried = ""
+        }
+        kind = .polishing(partial: carried)
     }
 
     func setDone(chars: Int) {

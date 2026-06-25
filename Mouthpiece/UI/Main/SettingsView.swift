@@ -136,6 +136,9 @@ private struct TranscriptionSettingsView: View {
 
 private struct PostProcessSettingsView: View {
     @State private var settings = AppSettings.shared
+    @State private var polishConfigured: Bool = PolishConfig.loadDefault() != nil
+    @State private var polishProvider: String = PolishConfig.loadDefault()?.provider ?? ""
+    @State private var polishModel: String = PolishConfig.loadDefault()?.model ?? ""
 
     var body: some View {
         Form {
@@ -149,6 +152,48 @@ private struct PostProcessSettingsView: View {
                 Toggle("自动转为简体中文（OpenCC t2s）", isOn: $settings.convertTraditionalToSimplified)
                 Text("依赖 `brew install opencc`；未安装则跳过。")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("AI 润色") {
+                HStack {
+                    Image(systemName: polishConfigured ? "checkmark.circle.fill" : "minus.circle")
+                        .foregroundStyle(polishConfigured ? .green : .secondary)
+                    Text(polishConfigured ? "已配置" : "未配置")
+                        .font(.callout)
+                    Spacer()
+                    if polishConfigured {
+                        Text("\(polishProvider) · \(polishModel)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button {
+                        polishConfigured = PolishConfig.loadDefault() != nil
+                        let cfg = PolishConfig.loadDefault()
+                        polishProvider = cfg?.provider ?? ""
+                        polishModel = cfg?.model ?? ""
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .controlSize(.small)
+                    .help("重新读取配置")
+                }
+                Text("AI 润色会把识别结果过一遍 LLM，自动修同音错字 + 必要时 markdown 排版。配置文件路径：")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("~/.config/mouthpiece/config.json")
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text("配置示例（DeepSeek）：")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("""
+                {
+                  "polish": {
+                    "provider": "deepseek",
+                    "apiKey": "sk-xxxxxx",
+                    "model": "deepseek-chat",
+                    "endpoint": "https://api.deepseek.com/v1/chat/completions"
+                  }
+                }
+                """)
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
             }
         }
         .formStyle(.grouped)

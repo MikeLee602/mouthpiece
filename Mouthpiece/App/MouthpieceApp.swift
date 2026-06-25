@@ -50,6 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return  // App can't function without history; bail out cleanly
         }
         let dictionary = DictionaryStore(sharing: history)
+        let polishConfig = PolishConfig.loadDefault()
+        let polisher: any Polishing = polishConfig != nil
+            ? DeepSeekPolisher(config: polishConfig)
+            : NoopPolisher()
+        if let cfg = polishConfig {
+            appLog.notice("✨ Polish configured: provider=\(cfg.provider, privacy: .public) model=\(cfg.model, privacy: .public)")
+        } else {
+            appLog.notice("✨ Polish not configured (\(PolishConfig.defaultPath.path, privacy: .public) absent)")
+        }
         let coord = AppCoordinator(
             permission: permission,
             recorder: recorder,
@@ -57,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             injector: injector,
             history: history,
             dictionary: dictionary,
+            polisher: polisher,
             floatingBar: bar,
             floatingWindow: window,
             triggerKey: settings.triggerKey,

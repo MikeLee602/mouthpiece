@@ -12,6 +12,8 @@ struct FloatingBarView: View {
                 recordingPill(elapsed: elapsed, levels: levels, partial: partial)
             case .processing(let partial):
                 processingPill(partial: partial)
+            case .polishing(let partial):
+                polishingPill(partial: partial)
             case .done(let n):
                 donePill(chars: n)
             case .error(let msg):
@@ -44,6 +46,21 @@ struct FloatingBarView: View {
     private func processingPill(partial: String) -> some View {
         pill {
             ProgressView().controlSize(.small).tint(.white)
+            if partial.isEmpty {
+                Text("识别中…")
+            } else {
+                Text(partial)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+
+    private func polishingPill(partial: String) -> some View {
+        pill {
+            Image(systemName: "sparkles")
+                .foregroundStyle(.yellow)
             if partial.isEmpty {
                 Text("润色中…")
             } else {

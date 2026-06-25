@@ -14,6 +14,7 @@ final class AppCoordinator {
         case recording
         case transcribing
         case cleaning
+        case polishing
         case injecting
         case done(chars: Int)
         case error(String)
@@ -34,6 +35,7 @@ final class AppCoordinator {
     private let injector: any TextInjecting
     let history: HistoryStore
     let dictionary: DictionaryStore
+    let polisher: any Polishing
     let floatingBar: FloatingBarState
     private let floatingWindow: FloatingBarWindow
 
@@ -60,6 +62,7 @@ final class AppCoordinator {
         injector: any TextInjecting,
         history: HistoryStore,
         dictionary: DictionaryStore,
+        polisher: any Polishing = NoopPolisher(),
         floatingBar: FloatingBarState,
         floatingWindow: FloatingBarWindow,
         triggerKey: TriggerKey = .fn,
@@ -72,6 +75,7 @@ final class AppCoordinator {
         self.injector = injector
         self.history = history
         self.dictionary = dictionary
+        self.polisher = polisher
         self.floatingBar = floatingBar
         self.floatingWindow = floatingWindow
         self.hotkey = HotKeyManager(triggerKey: triggerKey, mode: hotKeyMode)
@@ -152,7 +156,7 @@ final class AppCoordinator {
                 Task { await startRecording() }
             case .recording:
                 Task { await finishRecording() }
-            case .transcribing, .cleaning, .injecting:
+            case .transcribing, .cleaning, .polishing, .injecting:
                 // 处理中再按一下 → 忽略，避免抢占
                 log.notice("🔑 toggle ignored (phase busy)")
             }
@@ -290,15 +294,29 @@ final class AppCoordinator {
                 return
             }
 
+            // AI 润色（错字修正 + 排版）。配置缺失或失败会回退到 dictApplied，不阻塞 pipeline。
+            let polished: String
+            if await polisher.isConfigured {
+                phase = .polishing
+                floatingBar.setPolishing()
+                log.notice("🏁 Calling polisher.polish()...")
+                polished = await polisher.polish(dictApplied)
+                if polished != dictApplied {
+                    log.notice("🏁 Polished: \(polished, privacy: .public)")
+                }
+            } else {
+                polished = dictApplied
+            }
+
             phase = .injecting
             log.notice("🏁 Calling injector.inject()...")
-            try await injector.inject(dictApplied)
+            try await injector.inject(polished)
 
             // Persist history (best-effort)
             let entry = TranscriptionEntryDraft(
                 timestamp: Date(),
                 rawText: result.text,
-                cleanedText: dictApplied,
+                cleanedText: polished,
                 language: result.language,
                 durationSeconds: result.durationSeconds,
                 appName: NSWorkspace.shared.frontmostApplication?.localizedName
@@ -307,11 +325,11 @@ final class AppCoordinator {
             log.notice("📝 Saved to history (\(entry.cleanedText.count) chars)")
 
             if AppSettings.shared.notificationsEnabled {
-                NotificationCenterHelper.showTranscriptionDone(text: dictApplied)
+                NotificationCenterHelper.showTranscriptionDone(text: polished)
             }
 
-            phase = .done(chars: dictApplied.count)
-            floatingBar.setDone(chars: dictApplied.count)
+            phase = .done(chars: polished.count)
+            floatingBar.setDone(chars: polished.count)
 
             // After 1.5s the floatingBar auto-resets to .idle.
             // Hide the window to avoid leaking pixel space on screen.

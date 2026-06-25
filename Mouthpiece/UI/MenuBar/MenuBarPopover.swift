@@ -274,6 +274,7 @@ struct MenuBarPopover: View {
         case .recording: return "mic.fill"
         case .transcribing: return "waveform"
         case .cleaning: return "sparkles"
+        case .polishing: return "wand.and.stars"
         case .injecting: return "keyboard.fill"
         case .done: return "checkmark.circle.fill"
         case .error: return "exclamationmark.triangle.fill"
@@ -285,6 +286,7 @@ struct MenuBarPopover: View {
         case .idle: return .secondary
         case .recording: return .red
         case .transcribing, .cleaning: return .blue
+        case .polishing: return .yellow
         case .injecting: return .purple
         case .done: return .green
         case .error: return .orange
@@ -297,6 +299,7 @@ struct MenuBarPopover: View {
         case .recording: return "正在录音"
         case .transcribing: return "正在识别"
         case .cleaning: return "正在整理"
+        case .polishing: return "AI 润色中"
         case .injecting: return "正在粘贴"
         case .done(let n): return "已完成 \(n) 字"
         case .error: return "出错了"
@@ -309,6 +312,7 @@ struct MenuBarPopover: View {
         case .recording: return "正在采集音频…"
         case .transcribing: return "Whisper 处理中"
         case .cleaning: return "去重 / 转简"
+        case .polishing: return "DeepSeek 修字 / 排版"
         case .injecting: return "粘贴到当前应用"
         case .done: return "已粘贴到当前光标位置"
         case .error(let msg): return msg
