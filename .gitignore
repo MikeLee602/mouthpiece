@@ -11,5 +11,7 @@ Pods/
 .build/
 .idea/
 secrets/
+config.json
+*.api-key
 Mouthpiece.xcodeproj
 project-cache/
