@@ -14,7 +14,9 @@ struct MenuBarPopover: View {
 
     @State private var refreshTick: Int = 0
     @State private var recents: [TranscriptionEntry] = []
-    @State private var showAddDict: Bool = false
+    @State private var quickPattern: String = ""
+    @State private var quickReplacement: String = ""
+    @State private var savedFlashUntil: Date? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -24,12 +26,14 @@ struct MenuBarPopover: View {
             Divider()
             hint
             Divider()
+            quickAddSection
+            Divider()
             recentsSection
             Divider()
             actions
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 340)
         .onAppear {
             coordinator.permission.refresh()
             reload()
@@ -212,18 +216,65 @@ struct MenuBarPopover: View {
         .padding(.vertical, 2)
     }
 
+    // MARK: - Quick add dictionary (inline)
+
+    private var quickAddSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "plus.rectangle.on.rectangle")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                Text("记住这个词")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                if let until = savedFlashUntil, Date() < until {
+                    Label("已加入", systemImage: "checkmark.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+            }
+            HStack(spacing: 6) {
+                TextField("识别为", text: $quickPattern)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                TextField("应该是", text: $quickReplacement)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onSubmit { saveQuickAdd() }
+                Button {
+                    saveQuickAdd()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .disabled(quickPattern.trimmingCharacters(in: .whitespaces).isEmpty)
+                .help("加入词典（回车也可）")
+            }
+        }
+    }
+
+    private func saveQuickAdd() {
+        let p = quickPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        let r = quickReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !p.isEmpty else { return }
+        coordinator.dictionary.add(.init(
+            pattern: p,
+            replacement: r,
+            caseInsensitive: false,
+            note: "从菜单栏快捷录入"
+        ))
+        quickPattern = ""
+        quickReplacement = ""
+        savedFlashUntil = Date().addingTimeInterval(2.0)
+    }
+
     private var actions: some View {
         VStack(spacing: 6) {
-            // 快速添加词典 —— 一等公民，明显位置，一键弹表单
-            Button {
-                showAddDict = true
-            } label: {
-                Label("添加词典（记住这个词）", systemImage: "plus.rectangle.on.rectangle")
-                    .frame(maxWidth: .infinity)
-            }
-            .controlSize(.regular)
-            .buttonStyle(.borderedProminent)
-
             HStack(spacing: 8) {
                 Button {
                     openMain()
@@ -256,11 +307,6 @@ struct MenuBarPopover: View {
             }
         }
         .controlSize(.small)
-        .sheet(isPresented: $showAddDict) {
-            QuickAddDictionarySheet { draft in
-                coordinator.dictionary.add(draft)
-            }
-        }
     }
 
     // MARK: - Helpers
