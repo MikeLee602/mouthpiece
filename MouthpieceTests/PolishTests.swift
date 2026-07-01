@@ -88,4 +88,14 @@ final class DeepSeekPolisherTests: XCTestCase {
         let polished2 = await p.polish("   ")
         XCTAssertEqual(polished2, "   ")
     }
+
+    func testWithVocabHintDoesntCrash() async {
+        // 只验证不 crash + fallback 到 raw；不联网
+        let cfg = PolishConfig(provider: "deepseek", apiKey: "sk-x", model: "deepseek-chat", endpoint: "http://127.0.0.1:1/never")
+        let p = DeepSeekPolisher(config: cfg)
+        let hint: [(String, String)] = [("王梦松", "王孟松"), ("采购家", "采销")]
+        let out = await p.polish("这是一段测试", vocabHint: hint)
+        // 连不上 → 回退到 raw
+        XCTAssertEqual(out, "这是一段测试")
+    }
 }

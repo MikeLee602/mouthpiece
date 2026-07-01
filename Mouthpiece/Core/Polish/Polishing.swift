@@ -11,7 +11,16 @@ protocol Polishing: Sendable {
     /// 当前是否已配置可用。false 时调用 polish 直接返回原文。
     var isConfigured: Bool { get async }
     /// 把 raw 过一遍 LLM。失败回退 raw。
-    func polish(_ raw: String) async -> String
+    /// - Parameter vocabHint: 用户词典规则，会作为 hint 拼进 system prompt
+    ///   格式：`[(pattern, replacement)]`，例：`[("王梦松", "王孟松"), ("采购家", "采销")]`
+    func polish(_ raw: String, vocabHint: [(String, String)]) async -> String
+}
+
+// 兼容不传 hint 的调用
+extension Polishing {
+    func polish(_ raw: String) async -> String {
+        await polish(raw, vocabHint: [])
+    }
 }
 
 /// 配置文件：~/.config/mouthpiece/config.json

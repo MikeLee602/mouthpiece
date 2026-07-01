@@ -83,6 +83,16 @@ final class HistoryStore {
         try? context.save()
     }
 
+    /// 更新一条已有历史的 cleanedText（用户在历史列表里编辑纠错后调用）。
+    func updateCleanedText(id: UUID, newText: String) {
+        let pred = #Predicate<TranscriptionEntry> { $0.id == id }
+        let desc = FetchDescriptor<TranscriptionEntry>(predicate: pred)
+        if let entry = (try? context.fetch(desc))?.first {
+            entry.cleanedText = newText
+            try? context.save()
+        }
+    }
+
     /// 全部清空。
     func deleteAll() {
         let desc = FetchDescriptor<TranscriptionEntry>()

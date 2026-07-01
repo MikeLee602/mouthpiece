@@ -10,6 +10,7 @@ struct HistoryListView: View {
     @State private var entries: [TranscriptionEntry] = []
     @State private var selection: Set<UUID> = []
     @State private var showingDeleteConfirm = false
+    @State private var editingEntry: TranscriptionEntry?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +34,25 @@ struct HistoryListView: View {
             }
         } message: {
             Text("这些记录会从设备上永久删除。")
+        }
+        .sheet(item: $editingEntry) { entry in
+            EditHistoryEntrySheet(
+                entry: entry,
+                onSaveWithSuggestions: { newText, accepted in
+                    // 1. 更新历史
+                    coordinator.history.updateCleanedText(id: entry.id, newText: newText)
+                    // 2. 接受的建议入词典
+                    for s in accepted {
+                        coordinator.dictionary.add(.init(
+                            pattern: s.pattern,
+                            replacement: s.replacement,
+                            caseInsensitive: false,
+                            note: "从纠错学习"
+                        ))
+                    }
+                    reload()
+                }
+            )
         }
     }
 
@@ -104,14 +124,24 @@ struct HistoryListView: View {
             }
             .width(48)
             TableColumn("") { entry in
-                Button {
-                    copy(entry.cleanedText)
-                } label: {
-                    Image(systemName: "doc.on.doc")
+                HStack(spacing: 4) {
+                    Button {
+                        editingEntry = entry
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("纠错 / 学词")
+                    Button {
+                        copy(entry.cleanedText)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("复制")
                 }
-                .buttonStyle(.borderless)
-                .help("复制")
             }
+            .width(60)
             .width(36)
         }
     }

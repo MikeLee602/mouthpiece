@@ -14,6 +14,7 @@ struct MenuBarPopover: View {
 
     @State private var refreshTick: Int = 0
     @State private var recents: [TranscriptionEntry] = []
+    @State private var showAddDict: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -213,6 +214,16 @@ struct MenuBarPopover: View {
 
     private var actions: some View {
         VStack(spacing: 6) {
+            // 快速添加词典 —— 一等公民，明显位置，一键弹表单
+            Button {
+                showAddDict = true
+            } label: {
+                Label("添加词典（记住这个词）", systemImage: "plus.rectangle.on.rectangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.regular)
+            .buttonStyle(.borderedProminent)
+
             HStack(spacing: 8) {
                 Button {
                     openMain()
@@ -245,6 +256,11 @@ struct MenuBarPopover: View {
             }
         }
         .controlSize(.small)
+        .sheet(isPresented: $showAddDict) {
+            QuickAddDictionarySheet { draft in
+                coordinator.dictionary.add(draft)
+            }
+        }
     }
 
     // MARK: - Helpers

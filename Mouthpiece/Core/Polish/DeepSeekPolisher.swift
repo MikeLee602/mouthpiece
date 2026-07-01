@@ -22,7 +22,7 @@ actor DeepSeekPolisher: Polishing {
         get async { config != nil && !(config?.apiKey.isEmpty ?? true) }
     }
 
-    func polish(_ raw: String) async -> String {
+    func polish(_ raw: String, vocabHint: [(String, String)] = []) async -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return raw }
         guard let config else {
@@ -31,8 +31,8 @@ actor DeepSeekPolisher: Polishing {
         }
 
         do {
-            let polished = try await callDeepSeek(text: trimmed, config: config)
-            log.notice("✨ polished: \(polished.count) chars (raw=\(trimmed.count))")
+            let polished = try await callDeepSeek(text: trimmed, vocabHint: vocabHint, config: config)
+            log.notice("✨ polished: \(polished.count) chars (raw=\(trimmed.count), hint=\(vocabHint.count))")
             return polished
         } catch {
             log.warning("✨ polish failed (\(error.localizedDescription, privacy: .public)), falling back to raw")
@@ -56,10 +56,10 @@ actor DeepSeekPolisher: Polishing {
         }
     }
 
-    private func callDeepSeek(text: String, config: PolishConfig) async throws -> String {
+    private func callDeepSeek(text: String, vocabHint: [(String, String)], config: PolishConfig) async throws -> String {
         guard let url = URL(string: config.endpoint) else { throw PolishError.badURL }
 
-        let systemPrompt = """
+        var systemPrompt = """
         你是语音转写后处理助手。用户给你一段从 ASR 识别出的中文（偶尔混英文）。请：
         1. 主动修正同音错字、近音错字、专有名词错误（如「使用VESCO」→「使用 VSCode」、「鸡屁体」→「GPT」、「采想」→「采销」），结合上下文推断真实意图
         2. 补全/调整标点
@@ -68,6 +68,13 @@ actor DeepSeekPolisher: Polishing {
 
         只输出修正后文本，不要解释、不要 ``` 包装。
         """
+        // 用户词典 hint —— 把已知错→正映射告诉模型，让它遇到这些同音字时优先用正确写法
+        if !vocabHint.isEmpty {
+            let bullets = vocabHint.prefix(80).map { p, r in
+                r.isEmpty ? "- 「\(p)」" : "- 「\(p)」应写作「\(r)」"
+            }.joined(separator: "\n")
+            systemPrompt += "\n\n用户提供的正确写法（如果你在文本中看到左边这些形式或它们的同音字，优先按右边写）：\n" + bullets
+        }
 
         let body: [String: Any] = [
             "model": config.model,
@@ -115,5 +122,5 @@ actor DeepSeekPolisher: Polishing {
 /// 永远 disable 的占位实现（测试 / 没配置时用）
 struct NoopPolisher: Polishing {
     var isConfigured: Bool { get async { false } }
-    func polish(_ raw: String) async -> String { raw }
+    func polish(_ raw: String, vocabHint: [(String, String)]) async -> String { raw }
 }

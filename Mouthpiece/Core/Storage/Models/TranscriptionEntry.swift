@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-final class TranscriptionEntry {
+final class TranscriptionEntry: Identifiable {
     var id: UUID
     var timestamp: Date
     var rawText: String

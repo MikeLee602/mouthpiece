@@ -295,12 +295,15 @@ final class AppCoordinator {
             }
 
             // AI 润色（错字修正 + 排版）。配置缺失或失败会回退到 dictApplied，不阻塞 pipeline。
+            // 同时把 dictionary 里所有规则作为 vocab hint 传给 LLM —— 让它见到「王梦松」这种
+            // 同音字时能主动改成用户认可的「王孟松」，即使规则严格没匹配上。
             let polished: String
             if await polisher.isConfigured {
                 phase = .polishing
                 floatingBar.setPolishing()
-                log.notice("🏁 Calling polisher.polish()...")
-                polished = await polisher.polish(dictApplied)
+                log.notice("🏁 Calling polisher.polish() with \(self.dictionary.snapshot().count) vocab rules...")
+                let hint = self.dictionary.snapshot().map { ($0.pattern, $0.replacement) }
+                polished = await polisher.polish(dictApplied, vocabHint: hint)
                 if polished != dictApplied {
                     log.notice("🏁 Polished: \(polished, privacy: .public)")
                 }
