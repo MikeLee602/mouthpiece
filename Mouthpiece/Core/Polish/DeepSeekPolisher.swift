@@ -68,12 +68,28 @@ actor DeepSeekPolisher: Polishing {
 
         只输出修正后文本，不要解释、不要 ``` 包装。
         """
-        // 用户词典 hint —— 把已知错→正映射告诉模型，让它遇到这些同音字时优先用正确写法
+        // 用户词典 hint —— 分两类：
+        // - 精确规则（pattern 非空）：告诉模型见到左边这个词照右边写
+        // - 同音字规则（pattern 空）：告诉模型任何同音/近音变体都改成这个词
         if !vocabHint.isEmpty {
-            let bullets = vocabHint.prefix(80).map { p, r in
-                r.isEmpty ? "- 「\(p)」" : "- 「\(p)」应写作「\(r)」"
-            }.joined(separator: "\n")
-            systemPrompt += "\n\n用户提供的正确写法（如果你在文本中看到左边这些形式或它们的同音字，优先按右边写）：\n" + bullets
+            var exactRules: [String] = []
+            var homophoneRules: [String] = []
+            for (p, r) in vocabHint.prefix(80) {
+                let pt = p.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rt = r.trimmingCharacters(in: .whitespacesAndNewlines)
+                if rt.isEmpty { continue }
+                if pt.isEmpty {
+                    homophoneRules.append("「\(rt)」")
+                } else {
+                    exactRules.append("「\(pt)」→「\(rt)」")
+                }
+            }
+            if !exactRules.isEmpty {
+                systemPrompt += "\n\n用户提供的正确写法（左边写法或它的同音字，一律改成右边）：\n" + exactRules.map { "- " + $0 }.joined(separator: "\n")
+            }
+            if !homophoneRules.isEmpty {
+                systemPrompt += "\n\n用户认可的专有名词（原文中出现任何同音字、近音字、拼写变体，一律改成下面这个准确写法）：\n" + homophoneRules.map { "- " + $0 }.joined(separator: "\n")
+            }
         }
 
         let body: [String: Any] = [

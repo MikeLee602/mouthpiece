@@ -235,7 +235,7 @@ struct MenuBarPopover: View {
                 }
             }
             HStack(spacing: 6) {
-                TextField("识别为", text: $quickPattern)
+                TextField("识别为（可选）", text: $quickPattern)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
                 Image(systemName: "arrow.right")
@@ -252,21 +252,25 @@ struct MenuBarPopover: View {
                         .font(.title3)
                 }
                 .buttonStyle(.borderless)
-                .disabled(quickPattern.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(quickReplacement.trimmingCharacters(in: .whitespaces).isEmpty)
                 .help("加入词典（回车也可）")
             }
+            Text("留空「识别为」→ 靠 AI 识别同音字并改成「应该是」")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
     }
 
     private func saveQuickAdd() {
         let p = quickPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         let r = quickReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !p.isEmpty else { return }
+        // 「应该是」是必填，「识别为」可以空
+        guard !r.isEmpty else { return }
         coordinator.dictionary.add(.init(
             pattern: p,
             replacement: r,
             caseInsensitive: false,
-            note: "从菜单栏快捷录入"
+            note: p.isEmpty ? "同音字（AI 判断）" : "从菜单栏快捷录入"
         ))
         quickPattern = ""
         quickReplacement = ""

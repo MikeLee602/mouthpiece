@@ -76,10 +76,17 @@ struct DictionaryView: View {
             }
             .width(48)
             TableColumn("识别为") { entry in
-                Text(entry.pattern).font(.system(size: 13, design: .monospaced))
+                if entry.pattern.isEmpty {
+                    Label("同音字（AI 判断）", systemImage: "sparkles")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                } else {
+                    Text(entry.pattern).font(.system(size: 13, design: .monospaced))
+                }
             }
-            .width(min: 100, ideal: 160)
-            TableColumn("替换为") { entry in
+            .width(min: 100, ideal: 180)
+            TableColumn("应该是") { entry in
                 Text(entry.replacement).font(.system(size: 13, design: .monospaced))
             }
             .width(min: 100, ideal: 160)
@@ -133,29 +140,35 @@ private struct AddDictionarySheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("新增词典规则").font(.title3.bold())
             Form {
-                TextField("识别为", text: $pattern, prompt: Text("如：纸笔体"))
-                TextField("替换为", text: $replacement, prompt: Text("如：GPT"))
+                TextField("识别为（可选）", text: $pattern, prompt: Text("如：纸笔体；留空则靠 AI 判同音字"))
+                TextField("应该是", text: $replacement, prompt: Text("如：GPT"))
                 Toggle("忽略大小写", isOn: $caseInsensitive)
                 TextField("备注", text: $note, prompt: Text("可选"))
             }
             .formStyle(.grouped)
+            Text(pattern.trimmingCharacters(in: .whitespaces).isEmpty
+                 ? "留空「识别为」→ AI 见到「应该是」的任何同音/近音变体都会改过来"
+                 : "精确规则：只有原文一字不差出现「识别为」时才替换")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("保存") {
                     let trimmedPattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmedPattern.isEmpty else { return }
+                    let trimmedReplacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedReplacement.isEmpty else { return }
                     onSave(.init(
                         pattern: trimmedPattern,
-                        replacement: replacement,
+                        replacement: trimmedReplacement,
                         caseInsensitive: caseInsensitive,
                         note: note.isEmpty ? nil : note
                     ))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(replacement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
